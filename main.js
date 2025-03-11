@@ -60,8 +60,23 @@ function handleFileSelection(event) {
     // Reset transcription output
     transcriptionOutput.textContent = '';
     
+    // Estimate base64 size and log information
+    const estimatedBase64Size = estimateBase64Size(file.size);
     logToDebug(`File selected: ${file.name} (${formatFileSize(file.size)})`);
+    logToDebug(`Estimated base64 size: ${formatFileSize(estimatedBase64Size)}`);
+    
+    // Automatically determine if chunking will be needed
+    if (estimatedBase64Size > 30 * 1024 * 1024) {
+      logToDebug(`File will require chunking (base64 size exceeds 30MB)`);
+    }
   }
+}
+
+// Estimate base64 encoded size of a file (bytes)
+function estimateBase64Size(originalSize) {
+  // Base64 encoding increases size by approximately 33-37%
+  // We'll use 37% to be safe
+  return Math.ceil(originalSize * 1.37);
 }
 
 // Format file size for display
@@ -108,8 +123,11 @@ async function handleTranscriptionRequest() {
     const genAI = new GoogleGenerativeAI(API_KEY);
     const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
     
-    // Check if file needs to be chunked
-    if (file.size > MAX_CHUNK_SIZE) {
+    // Check if file needs to be chunked (considering base64 encoding overhead)
+    const estimatedBase64Size = estimateBase64Size(file.size);
+    
+    if (file.size > MAX_CHUNK_SIZE || estimatedBase64Size > 30 * 1024 * 1024) {
+      logToDebug(`File size or encoded size requires chunking`);
       await processLargeFile(file, model);
     } else {
       await processSingleFile(file, model);
@@ -165,6 +183,7 @@ async function transcribeAudio(file, model) {
     
     // Convert to base64
     const base64Data = Base64.fromByteArray(new Uint8Array(arrayBuffer));
+    logToDebug(`Chunk actual base64 size: ${formatFileSize(base64Data.length)}`);
     
     // Prepare content for Gemini API
     const contents = [
