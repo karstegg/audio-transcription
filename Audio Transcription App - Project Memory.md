@@ -1,7 +1,7 @@
 # Audio Transcription App - Project Memory
 
 ## Project Overview
-A web application using Google's Gemini API to transcribe audio and video files. The app allows users to upload files, processes them (including chunking large files), and returns a text transcript with additional features like meeting summaries.
+A web application using Google's Gemini API to transcribe audio and video files. The app allows users to upload files, processes them (including chunking large files and extracting audio from videos), and returns a text transcript with additional features like meeting summaries.
 
 ## Repository Structure
 - GitHub: `karstegg/audio-transcription`
@@ -9,7 +9,7 @@ A web application using Google's Gemini API to transcribe audio and video files.
   - `main`: Original implementation
   - `improved-ui-and-functionality`: Enhanced core functionality
   - `feature-diarization`: Speaker identification feature
-  - `feature-transcript-utilities`: Added utilities like copy, cancel, and summary
+  - `feature-transcript-utilities`: Added utilities like copy, cancel, summary, and video support
 
 ## Technical Implementation
 
@@ -24,6 +24,7 @@ A web application using Google's Gemini API to transcribe audio and video files.
 
 2. **JavaScript**
    - Gemini API integration via Google Generative AI client
+   - Audio extraction from video using Web Audio API
    - File chunking for large files
    - Base64 encoding for API requests
    - Prompt engineering for better transcription quality
@@ -70,6 +71,12 @@ A web application using Google's Gemini API to transcribe audio and video files.
    - Implemented toast notifications for user feedback
    - Enhanced UI with improved button styling
 
+6. **Video Support**
+   - Added audio extraction from video files
+   - Implemented Web Audio API for extraction
+   - Created progress reporting for extraction process
+   - Fixed issues with video file chunks failing after first chunk
+
 ## Key Technical Decisions
 
 1. **File Size Handling**
@@ -102,6 +109,11 @@ A web application using Google's Gemini API to transcribe audio and video files.
    - **Solution**: Added Gemini-powered summary generation for meeting transcripts
    - **Implementation**: Created summary prompt to extract key points, decisions, and actions
 
+7. **Video File Processing**
+   - **Problem**: Video files failed after first chunk in Gemini API
+   - **Solution**: Extract audio from video files before sending to Gemini
+   - **Implementation**: Created `audioExtractor.js` using Web Audio API, MediaRecorder, and faster-than-realtime playback
+
 ## Issues Addressed
 
 1. ✅ **Base64 Size Issue**
@@ -128,6 +140,10 @@ A web application using Google's Gemini API to transcribe audio and video files.
    - Issue: Difficult to quickly extract key information from transcripts
    - Solution: Added meeting summary feature with structured output
 
+7. ✅ **Video Transcription Failures**
+   - Issue: Video files failed after first chunk with "Request contains an invalid argument" error
+   - Solution: Added audio extraction from video files before transcription processing
+
 ## Future Improvements
 1. Export options (TXT, SRT)
 2. Direct microphone recording
@@ -135,3 +151,4 @@ A web application using Google's Gemini API to transcribe audio and video files.
 4. Timestamp generation
 5. Enhanced speaker identification
 6. Integration with other speech-to-text APIs for comparison
+7. More efficient video processing with Web Assembly
