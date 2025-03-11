@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Baking with the Gemini API</title>
+  <title>Audio Transcription App</title>
+</head>
+
+<body>
+  <main>
+    <h1>Audio Transcription App</h1>
+    <input type="file" id="audioFileInput" accept="audio/*,video/*">
+    <button id="transcribeButton">Transcribe</button>
+        <div id="audio-player-container">
+        <audio id="audioPlayer" controls></audio>
+        <div id="transcriptOutput">
+            
+        </div>
+    </div>
+  </main>
+
+  <script type="module" src="/main.js"></script>
+  <button id="toggleDebugButton">Toggle Debug</button>
+  <div id="debugWindow" style="display: none;">
+
+  </div>
+  
+</body>
+</html>
