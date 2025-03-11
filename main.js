@@ -73,10 +73,10 @@ function handleFileSelection(event) {
   }
 }
 
-// Get appropriate MIME type for audio files
+// Get appropriate MIME type for audio/video files
 function getAudioMimeType(file) {
   // If the file already has a valid MIME type, use it
-  if (file.type && file.type.startsWith('audio/')) {
+  if (file.type && (file.type.startsWith('audio/') || file.type.startsWith('video/'))) {
     return file.type;
   }
   
@@ -84,13 +84,19 @@ function getAudioMimeType(file) {
   const extension = file.name.split('.').pop().toLowerCase();
   
   const mimeTypes = {
+    // Audio formats
     'mp3': 'audio/mpeg',
     'wav': 'audio/wav',
     'ogg': 'audio/ogg',
     'webm': 'audio/webm',
     'm4a': 'audio/mp4',
     'aac': 'audio/aac',
-    'flac': 'audio/flac'
+    'flac': 'audio/flac',
+    // Video formats
+    'mp4': 'video/mp4',
+    'mov': 'video/quicktime',
+    'avi': 'video/x-msvideo',
+    'mkv': 'video/x-matroska'
   };
   
   return mimeTypes[extension] || 'audio/mpeg'; // Default to audio/mpeg if unknown
@@ -112,12 +118,14 @@ function formatFileSize(bytes) {
 
 // Split large files into manageable chunks
 function chunkFile(file) {
+  // Make smaller chunks to avoid errors - 15MB instead of 22MB
+  const effectiveChunkSize = 15 * 1024 * 1024;
   const chunks = [];
   let start = 0;
   const fileSize = file.size;
 
   while (start < fileSize) {
-    const end = Math.min(start + MAX_CHUNK_SIZE, fileSize);
+    const end = Math.min(start + effectiveChunkSize, fileSize);
     const chunk = file.slice(start, end);
     // Preserve the original file type and name for each chunk
     Object.defineProperty(chunk, 'type', {
@@ -132,7 +140,7 @@ function chunkFile(file) {
     start = end;
   }
   
-  logToDebug(`File split into ${chunks.length} chunks`);
+  logToDebug(`File split into ${chunks.length} chunks of max ${formatFileSize(effectiveChunkSize)}`);
   return chunks;
 }
 
@@ -154,17 +162,17 @@ async function handleTranscriptionRequest() {
     
     // Initialize Gemini API
     const genAI = new GoogleGenerativeAI(API_KEY);
-    const model = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+    const model = genAI.getGenerativeModel({ 
+      model: GEMINI_MODEL,
+      generationConfig: {
+        temperature: 0,
+        topP: 0.95,
+        topK: 64,
+      }
+    });
     
-    // Check if file needs to be chunked (considering base64 encoding overhead)
-    const estimatedBase64Size = estimateBase64Size(file.size);
-    
-    if (file.size > MAX_CHUNK_SIZE || estimatedBase64Size > 30 * 1024 * 1024) {
-      logToDebug(`File size or encoded size requires chunking`);
-      await processLargeFile(file, model);
-    } else {
-      await processSingleFile(file, model);
-    }
+    // All files should be chunked for consistency
+    await processLargeFile(file, model);
     
     // Hide status indicator when done
     hideStatus();
@@ -176,17 +184,6 @@ async function handleTranscriptionRequest() {
   }
 }
 
-// Process a single file (smaller than chunk size)
-async function processSingleFile(file, model) {
-  showStatus('Transcribing audio...');
-  logToDebug('Processing single file');
-  
-  const transcription = await transcribeAudio(file, model);
-  displayResult(transcription);
-  
-  logToDebug('Transcription complete');
-}
-
 // Process a large file in chunks
 async function processLargeFile(file, model) {
   const chunks = chunkFile(file);
@@ -196,11 +193,22 @@ async function processLargeFile(file, model) {
     showStatus(`Processing chunk ${i + 1} of ${chunks.length}...`);
     logToDebug(`Processing chunk ${i + 1} of ${chunks.length}`);
     
-    const chunkTranscription = await transcribeAudio(chunks[i], model);
-    fullTranscription += chunkTranscription + ' ';
-    
-    // Update with partial results
-    transcriptionOutput.textContent = fullTranscription;
+    try {
+      const chunkTranscription = await transcribeAudio(chunks[i], model);
+      fullTranscription += chunkTranscription + ' ';
+      
+      // Update with partial results
+      transcriptionOutput.textContent = fullTranscription;
+      
+      // Add a small delay between chunks to avoid rate limiting
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    } catch (error) {
+      logToDebug(`Error with chunk ${i + 1}: ${error.message}`);
+      // Continue with next chunk instead of failing completely
+      fullTranscription += ` [Error transcribing part ${i + 1}] `;
+    }
   }
   
   // Final display with complete transcription
@@ -222,16 +230,19 @@ async function transcribeAudio(file, model) {
     const mimeType = getAudioMimeType(file);
     logToDebug(`Using MIME type: ${mimeType}`);
     
-    // Prepare content for Gemini API
+    // Prepare content for Gemini API with specific instruction for verbatim transcription
     const contents = [
       {
         role: 'user',
-        parts: [{ 
-          inline_data: { 
-            mime_type: mimeType, 
-            data: base64Data 
-          } 
-        }]
+        parts: [
+          { text: "Please provide a verbatim transcription of this audio. Include all spoken words exactly as heard, with no summarization, commentary, or analysis. Just transcribe the exact speech." }, 
+          { 
+            inline_data: { 
+              mime_type: mimeType, 
+              data: base64Data 
+            } 
+          }
+        ]
       }
     ];
     
