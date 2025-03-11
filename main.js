@@ -60,7 +60,7 @@ function handleFileSelection(event) {
     // Reset transcription output
     transcriptionOutput.textContent = '';
     
-    logToDebug(`File selected: ${file.name} (${formatFileSize(file.size)})`;
+    logToDebug(`File selected: ${file.name} (${formatFileSize(file.size)})`);
   }
 }
 
