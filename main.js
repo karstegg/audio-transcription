@@ -117,40 +117,85 @@ function handleCancelReset() {
   logToDebug('App reset');
 }
 
+// Fallback copy text function (for browsers with restricted Clipboard API)
+function copyTextToClipboard(text) {
+  // Create a temporary textarea element
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  
+  // Make the textarea out of viewport
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-999999px';
+  textarea.style.top = '-999999px';
+  document.body.appendChild(textarea);
+  
+  // Select and copy
+  textarea.select();
+  let success = false;
+  
+  try {
+    success = document.execCommand('copy');
+  } catch (err) {
+    logToDebug(`Copy error: ${err.message}`);
+    success = false;
+  }
+  
+  // Remove the textarea
+  document.body.removeChild(textarea);
+  return success;
+}
+
+// Copy text with fallback
+async function copyText(text) {
+  let success = false;
+  
+  // Try modern Clipboard API first
+  try {
+    await navigator.clipboard.writeText(text);
+    success = true;
+  } catch (err) {
+    logToDebug(`Clipboard API error: ${err.message}. Trying fallback method...`);
+    // Use fallback method
+    success = copyTextToClipboard(text);
+  }
+  
+  return success;
+}
+
 // Copy transcript to clipboard
-function copyTranscriptToClipboard() {
+async function copyTranscriptToClipboard() {
   if (!transcriptionOutput.textContent.trim()) {
     showToast('No transcript to copy', false);
     return;
   }
   
-  navigator.clipboard.writeText(transcriptionOutput.textContent)
-    .then(() => {
-      showToast('Transcript copied to clipboard');
-      logToDebug('Transcript copied to clipboard');
-    })
-    .catch(err => {
-      showToast('Failed to copy transcript', false);
-      logToDebug(`Copy error: ${err.message}`);
-    });
+  const success = await copyText(transcriptionOutput.textContent);
+  
+  if (success) {
+    showToast('Transcript copied to clipboard');
+    logToDebug('Transcript copied to clipboard');
+  } else {
+    showToast('Failed to copy transcript', false);
+    logToDebug('Failed to copy transcript');
+  }
 }
 
 // Copy summary to clipboard
-function copySummaryToClipboard() {
+async function copySummaryToClipboard() {
   if (!summaryOutput.textContent.trim()) {
     showToast('No summary to copy', false);
     return;
   }
   
-  navigator.clipboard.writeText(summaryOutput.textContent)
-    .then(() => {
-      showToast('Summary copied to clipboard');
-      logToDebug('Summary copied to clipboard');
-    })
-    .catch(err => {
-      showToast('Failed to copy summary', false);
-      logToDebug(`Copy error: ${err.message}`);
-    });
+  const success = await copyText(summaryOutput.textContent);
+  
+  if (success) {
+    showToast('Summary copied to clipboard');
+    logToDebug('Summary copied to clipboard');
+  } else {
+    showToast('Failed to copy summary', false);
+    logToDebug('Failed to copy summary');
+  }
 }
 
 // Generate meeting summary
