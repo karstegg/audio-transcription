@@ -1,175 +1,321 @@
-import { GoogleGenerativeAI, HarmBlockThreshold, HarmCategory } from "@google/generative-ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import Base64 from 'base64-js';
-import MarkdownIt from 'markdown-it';
-import { maybeShowApiKeyBanner } from './gemini-api-banner'; 
+import { maybeShowApiKeyBanner } from './gemini-api-banner';
+import CONFIG from './config.js';
 
-const MAX_CHUNK_SIZE = 30 * 1024 * 1024; // 30MB
+// Get configuration values
+const MAX_CHUNK_SIZE = CONFIG.fileProcessing.maxChunkSize;
+const GEMINI_MODEL = CONFIG.gemini.model;
+const API_KEY = CONFIG.gemini.apiKey;
 
-function logToDebugWindow(message) {
-  const debugWindow = document.getElementById('debugWindow');
-  debugWindow.innerHTML += message + '<br>';
-}
-
+// DOM Elements
+const audioFileInput = document.getElementById('audioFileInput');
+const transcribeButton = document.getElementById('transcribeButton');
+const transcriptionOutput = document.getElementById('transcriptionOutput');
+const audioPlayer = document.getElementById('audioPlayer');
+const audioPlayerContainer = document.getElementById('audio-player-container');
+const statusIndicator = document.getElementById('status-indicator');
+const statusText = document.getElementById('status-text');
 const toggleDebugButton = document.getElementById('toggleDebugButton');
 const debugWindow = document.getElementById('debugWindow');
+const diarizationToggle = document.getElementById('diarizationToggle');
 
-toggleDebugButton.addEventListener('click', () => {
+// Debug utility
+function logToDebug(message) {
+  const timestamp = new Date().toLocaleTimeString();
+  debugWindow.innerHTML += `[${timestamp}] ${message}<br>`;
+  // Auto-scroll to bottom
+  debugWindow.scrollTop = debugWindow.scrollHeight;
+}
+
+// Initialize the app
+function initApp() {
+  logToDebug('App initialized');
+  
+  // Check for API key and show banner if needed
+  maybeShowApiKeyBanner(API_KEY);
+  
+  // Event listeners
+  toggleDebugButton.addEventListener('click', toggleDebugConsole);
+  transcribeButton.addEventListener('click', handleTranscriptionRequest);
+  audioFileInput.addEventListener('change', handleFileSelection);
+}
+
+// Toggle debug console visibility
+function toggleDebugConsole() {
   if (debugWindow.style.display === 'none') {
     debugWindow.style.display = 'block';
   } else {
     debugWindow.style.display = 'none';
   }
-});
+}
 
-logToDebugWindow('Script loaded');
+// Handle file selection
+function handleFileSelection(event) {
+  const file = event.target.files[0];
+  if (file) {
+    // Set the source for the audio player
+    audioPlayer.src = URL.createObjectURL(file);
+    audioPlayerContainer.classList.remove('hidden');
+    
+    // Reset transcription output
+    transcriptionOutput.textContent = '';
+    
+    // Estimate base64 size and log information
+    const estimatedBase64Size = estimateBase64Size(file.size);
+    logToDebug(`File selected: ${file.name} (${formatFileSize(file.size)})`);
+    logToDebug(`File type: ${file.type}`);
+    logToDebug(`Estimated base64 size: ${formatFileSize(estimatedBase64Size)}`);
+    
+    // Automatically determine if chunking will be needed
+    if (estimatedBase64Size > 30 * 1024 * 1024) {
+      logToDebug(`File will require chunking (base64 size exceeds 30MB)`);
+    }
+  }
+}
 
-function chunkFile(audioFile) {
-  logToDebugWindow('chunkFile function called');
+// Get appropriate MIME type for audio/video files
+function getAudioMimeType(file) {
+  // If the file already has a valid MIME type, use it
+  if (file.type && (file.type.startsWith('audio/') || file.type.startsWith('video/'))) {
+    return file.type;
+  }
+  
+  // Otherwise, try to determine from file extension
+  const extension = file.name.split('.').pop().toLowerCase();
+  
+  const mimeTypes = {
+    // Audio formats
+    'mp3': 'audio/mpeg',
+    'wav': 'audio/wav',
+    'ogg': 'audio/ogg',
+    'webm': 'audio/webm',
+    'm4a': 'audio/mp4',
+    'aac': 'audio/aac',
+    'flac': 'audio/flac',
+    // Video formats
+    'mp4': 'video/mp4',
+    'mov': 'video/quicktime',
+    'avi': 'video/x-msvideo',
+    'mkv': 'video/x-matroska'
+  };
+  
+  return mimeTypes[extension] || 'audio/mpeg'; // Default to audio/mpeg if unknown
+}
+
+// Estimate base64 encoded size of a file (bytes)
+function estimateBase64Size(originalSize) {
+  // Base64 encoding increases size by approximately 33-37%
+  // We'll use 37% to be safe
+  return Math.ceil(originalSize * 1.37);
+}
+
+// Format file size for display
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' bytes';
+  else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  else return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+// Split large files into manageable chunks
+function chunkFile(file) {
+  // Make smaller chunks to avoid errors - 15MB instead of 22MB
+  const effectiveChunkSize = 15 * 1024 * 1024;
   const chunks = [];
   let start = 0;
-  const fileSize = audioFile.size;
+  const fileSize = file.size;
 
   while (start < fileSize) {
-    const end = Math.min(start + MAX_CHUNK_SIZE, fileSize);
-    const chunk = audioFile.slice(start, end);
+    const end = Math.min(start + effectiveChunkSize, fileSize);
+    const chunk = file.slice(start, end);
+    // Preserve the original file type and name for each chunk
+    Object.defineProperty(chunk, 'type', {
+      value: file.type,
+      writable: false
+    });
+    Object.defineProperty(chunk, 'name', {
+      value: file.name,
+      writable: false
+    });
     chunks.push(chunk);
-    logToDebugWindow('Chunk created');
     start = end;
   }
+  
+  logToDebug(`File split into ${chunks.length} chunks of max ${formatFileSize(effectiveChunkSize)}`);
   return chunks;
 }
 
-
-
-
-async function handleAudioTranscription() {  
-  logToDebugWindow('handleAudioTranscription function called');
+// Handle transcription request
+async function handleTranscriptionRequest() {
+  const file = audioFileInput.files[0];
+  
+  if (!file) {
+    showError('Please select an audio file.');
+    return;
+  }
+  
   try {
-    const audioFileInput = document.getElementById('audioFileInput');
-    const transcriptionOutput = document.getElementById('transcriptionOutput');
-    if (!audioFileInput.files || audioFileInput.files.length === 0) {
-      transcriptionOutput.textContent = 'Please select an audio file.';
-      return;
-    }
-
-    let fullTranscription = '';
-    const audioFile = audioFileInput.files[0];    
+    // Show processing status
+    showStatus('Preparing to transcribe...');
+    transcriptionOutput.textContent = '';
+    
+    logToDebug('Starting transcription process');
+    
+    // Initialize Gemini API
     const genAI = new GoogleGenerativeAI(API_KEY);
-    const model = genAI.getGenerativeModel({
-        model: "gemini-1.5-flash",
+    const model = genAI.getGenerativeModel({ 
+      model: GEMINI_MODEL,
+      generationConfig: {
+        temperature: 0,
+        topP: 0.95,
+        topK: 64,
+      }
     });
-    const prepareData = async (file) => {
-      const fileReader = new FileReader();
-      const audioData = await new Promise((resolve) => {
-          fileReader.onload = (event) => resolve(event.target.result);
-          fileReader.readAsArrayBuffer(file);
-      });
-
-      const audioBase64 = Base64.fromByteArray(new Uint8Array(audioData));
-      const contents = [
-        {
-          role: 'user',
-          parts: [{ inline_data: { mime_type: audioFile.type, data: audioBase64 } }]
-        }
-      ];
-      const result = await model.generateContent({ contents });
-      const response = result.response;
-      return response.text();   
-    }
     
+    // All files should be chunked for consistency
+    await processLargeFile(file, model);
     
-    const processChunk = async (chunk, chunkNumber) => {
-      try{
-        logToDebugWindow('Model called for chunk ' + chunkNumber);
-        const chunkTranscription = await prepareData(chunk);
-        fullTranscription += chunkTranscription;
-        logToDebugWindow('Model content generated for chunk ' + chunkNumber);
-      }catch(error){
-        logToDebugWindow('Error generating model content: '+ error.message);
-        
-      }
-    };
+    // Hide status indicator when done
+    hideStatus();
     
-    if (audioFile.size > MAX_CHUNK_SIZE) {
-        logToDebugWindow("File is too big, processing chunks now");
-        
-    }else{
-        await prepareData() 
-    }
-    if (audioFile.size > MAX_CHUNK_SIZE) {
-      const chunks = chunkFile(audioFile);
-      for (let i = 0; i < chunks.length; i++) {
-        transcriptionOutput.textContent = 'Processing chunk ' + (i + 1) + ' of ' + chunks.length + '...';
-        logToDebugWindow('Preparing chunk '+i);
-        if (!audioFile) {
-          logToDebugWindow('Error: No file selected');
-          transcriptionOutput.textContent = "No file selected";
-        }
-        await processChunk(chunks[i], i + 1);
-      }
-      transcriptionOutput.textContent = fullTranscription;
-      logToDebugWindow("All chunks processed");
-    }else{
-      transcriptionOutput.textContent = await prepareData();
-    }
-         
   } catch (error) {
-    console.error("Error during audio transcription:", error);
-    const transcriptionOutput = document.getElementById('transcriptionOutput');
-    if(transcriptionOutput){
-      transcriptionOutput.textContent = error.message;
-    }
-    
-    logToDebugWindow('Error: '+ error.message);
+    console.error("Transcription error:", error);
+    showError(`Error: ${error.message}`);
+    logToDebug(`ERROR: ${error.message}`);
   }
 }
 
-const transcribeButton = document.querySelector('#transcribeButton');
-transcribeButton.addEventListener('click', () => {
-  logToDebugWindow('handleAudioTranscription function called');
-  handleAudioTranscription();
-});
+// Process a large file in chunks
+async function processLargeFile(file, model) {
+  const chunks = chunkFile(file);
+  let fullTranscription = '';
+  
+  for (let i = 0; i < chunks.length; i++) {
+    showStatus(`Processing chunk ${i + 1} of ${chunks.length}...`);
+    logToDebug(`Processing chunk ${i + 1} of ${chunks.length}`);
+    
+    try {
+      const chunkTranscription = await transcribeAudio(chunks[i], model, i + 1, chunks.length);
+      fullTranscription += chunkTranscription + ' ';
+      
+      // Update with partial results
+      transcriptionOutput.textContent = fullTranscription;
+      
+      // Add a small delay between chunks to avoid rate limiting
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    } catch (error) {
+      logToDebug(`Error with chunk ${i + 1}: ${error.message}`);
+      // Continue with next chunk instead of failing completely
+      fullTranscription += ` [Error transcribing part ${i + 1}] `;
+    }
+  }
+  
+  // Final display with complete transcription
+  displayResult(fullTranscription);
+  logToDebug('All chunks processed');
+}
 
-
-// 🔥🔥 FILL THIS OUT FIRST! 🔥🔥
-// Get your Gemini API key by:
-// - Selecting "Add Gemini API" in the "Project IDX" panel in the sidebar
-// - Or by visiting https://g.co/ai/idxGetGeminiKey
-let API_KEY = 'AIzaSyCd5lAwn55AhKGEPK2Fe8o4zUCfsiquQCo';
-
-
-let form = document.querySelector('form');
-let promptInput = document.querySelector('input[name="prompt"]');
-let output = document.querySelector('.output');
-
-form.onsubmit = async (ev) => {
-  ev.preventDefault();
-  output.textContent = 'Generating...';
-
+// Core transcription function
+async function transcribeAudio(file, model, chunkIndex, totalChunks) {
   try {
-    // Load the image as a base64 string
-    let imageUrl = form.elements.namedItem('chosen-image').value;
-    let imageBase64 = await fetch(imageUrl)
-      .then(r => r.arrayBuffer())
-      .then(a => Base64.fromByteArray(new Uint8Array(a)));
+    // Read file as ArrayBuffer
+    const arrayBuffer = await readFileAsArrayBuffer(file);
+    
+    // Convert to base64
+    const base64Data = Base64.fromByteArray(new Uint8Array(arrayBuffer));
+    logToDebug(`Chunk actual base64 size: ${formatFileSize(base64Data.length)}`);
+    
+    // Get appropriate MIME type
+    const mimeType = getAudioMimeType(file);
+    logToDebug(`Using MIME type: ${mimeType}`);
+    
+    // Check if diarization is enabled
+    const diarizationEnabled = diarizationToggle && diarizationToggle.checked;
+    
+    // Prepare prompt based on diarization setting
+    let prompt;
+    if (diarizationEnabled) {
+      prompt = `Please transcribe this ${chunkIndex ? `part ${chunkIndex} of ${totalChunks} of the` : ''} audio with speaker diarization. Identify different speakers and label them as Speaker 1, Speaker 2, etc. Format the transcript with speaker labels at the start of each turn like this:
 
-    // Assemble the prompt by combining the text with the chosen image
-    let contents = [
+Speaker 1: [transcribed text]
+Speaker 2: [transcribed text]
+
+The transcription should be verbatim including filler words, stutters, and false starts. Don't add any commentary or summarization.`;
+    } else {
+      prompt = `Please provide a verbatim transcription of this ${chunkIndex ? `part ${chunkIndex} of ${totalChunks} of the` : ''} audio. Include all spoken words exactly as heard, with no summarization, commentary, or analysis. Include filler words, stutters, and false starts. Just transcribe the exact speech.`;
+    }
+    
+    logToDebug(`Using ${diarizationEnabled ? 'diarization' : 'standard'} prompt`);
+    
+    // Prepare content for Gemini API
+    const contents = [
       {
         role: 'user',
         parts: [
-          { inline_data: { mime_type: 'image/jpeg', data: imageBase64, } },
-          { text: promptInput.value }
+          { text: prompt }, 
+          { 
+            inline_data: { 
+              mime_type: mimeType, 
+              data: base64Data 
+            } 
+          }
         ]
       }
     ];
-
-    // Call the multimodal model, and get a stream of results
-  } catch (e) {
-    output.innerHTML += '<hr>' + e;
+    
+    logToDebug('Sending to Gemini API...');
+    
+    // Generate content
+    const result = await model.generateContent({ contents });
+    const response = result.response;
+    
+    logToDebug('Received response from Gemini API');
+    
+    return response.text();
+  } catch (error) {
+    logToDebug(`Transcription error: ${error.message}`);
+    throw error;
   }
-};
+}
 
-// You can delete this once you've filled out an API key
+// Helper function to read file as ArrayBuffer
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = event => resolve(event.target.result);
+    reader.onerror = error => reject(error);
+    reader.readAsArrayBuffer(file);
+  });
+}
 
-maybeShowApiKeyBanner(API_KEY);
+// Display transcription result
+function displayResult(text) {
+  transcriptionOutput.textContent = text;
+}
+
+// Show status message
+function showStatus(message) {
+  statusText.textContent = message;
+  statusIndicator.classList.remove('hidden');
+}
+
+// Hide status indicator
+function hideStatus() {
+  statusIndicator.classList.add('hidden');
+}
+
+// Show error message
+function showError(message) {
+  transcriptionOutput.textContent = message;
+  transcriptionOutput.style.color = 'var(--error-color)';
+  
+  // Reset color after a moment
+  setTimeout(() => {
+    transcriptionOutput.style.color = '';
+  }, 3000);
+}
+
+// Initialize the app when the DOM is loaded
+document.addEventListener('DOMContentLoaded', initApp);
