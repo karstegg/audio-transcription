@@ -13,7 +13,10 @@
     <h1>Audio Transcription App</h1>
     <div class="upload-container">
       <input type="file" id="audioFileInput" accept="audio/*,video/*">
-      <button id="transcribeButton">Transcribe</button>
+      <div class="button-group">
+        <button id="transcribeButton" class="primary-button">Transcribe</button>
+        <button id="cancelButton" class="secondary-button">Cancel/Reset</button>
+      </div>
     </div>
     
     <div id="status-indicator" class="status hidden">
@@ -28,8 +31,24 @@
       </div>
       
       <div id="transcription-container">
-        <h3>Transcription</h3>
+        <div class="section-header">
+          <h3>Transcription</h3>
+          <button id="copyTranscriptButton" class="icon-button">
+            <span class="icon">📋</span> Copy
+          </button>
+        </div>
         <div id="transcriptionOutput" class="output-box"></div>
+      </div>
+      
+      <div id="summary-container" class="hidden">
+        <div class="section-header">
+          <h3>Meeting Summary</h3>
+          <button id="copySummaryButton" class="icon-button">
+            <span class="icon">📋</span> Copy
+          </button>
+        </div>
+        <div id="summaryOutput" class="output-box"></div>
+        <button id="createSummaryButton" class="feature-button">Create Summary</button>
       </div>
     </div>
   </main>
