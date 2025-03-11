@@ -44,6 +44,9 @@ function initApp() {
   // Check for API key and show banner if needed
   maybeShowApiKeyBanner(API_KEY);
   
+  // Make summary container visible by default
+  summaryContainer.classList.remove('hidden');
+  
   // Event listeners
   toggleDebugButton.addEventListener('click', toggleDebugConsole);
   transcribeButton.addEventListener('click', handleTranscriptionRequest);
@@ -74,8 +77,7 @@ function handleFileSelection(event) {
     // Reset transcription output
     transcriptionOutput.textContent = '';
     
-    // Hide summary container when new file is selected
-    summaryContainer.classList.add('hidden');
+    // Reset summary output
     summaryOutput.textContent = '';
     
     // Estimate base64 size and log information
@@ -106,7 +108,6 @@ function handleCancelReset() {
   summaryOutput.textContent = '';
   audioPlayer.src = '';
   audioPlayerContainer.classList.add('hidden');
-  summaryContainer.classList.add('hidden');
   
   // Hide status indicator
   hideStatus();
@@ -209,7 +210,6 @@ async function generateSummary() {
     // Show processing status
     showStatus('Generating summary...');
     summaryOutput.textContent = '';
-    summaryContainer.classList.remove('hidden');
     
     logToDebug('Starting summary generation');
     
@@ -389,8 +389,7 @@ async function handleTranscriptionRequest() {
     transcriptionOutput.textContent = '';
     currentTranscription = '';
     
-    // Hide summary if previously generated
-    summaryContainer.classList.add('hidden');
+    // Reset summary output
     summaryOutput.textContent = '';
     
     logToDebug('Starting transcription process');
