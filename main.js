@@ -11,13 +11,23 @@ const API_KEY = CONFIG.gemini.apiKey;
 // DOM Elements
 const audioFileInput = document.getElementById('audioFileInput');
 const transcribeButton = document.getElementById('transcribeButton');
+const cancelButton = document.getElementById('cancelButton');
+const copyTranscriptButton = document.getElementById('copyTranscriptButton');
+const createSummaryButton = document.getElementById('createSummaryButton');
+const copySummaryButton = document.getElementById('copySummaryButton');
 const transcriptionOutput = document.getElementById('transcriptionOutput');
+const summaryOutput = document.getElementById('summaryOutput');
+const summaryContainer = document.getElementById('summary-container');
 const audioPlayer = document.getElementById('audioPlayer');
 const audioPlayerContainer = document.getElementById('audio-player-container');
 const statusIndicator = document.getElementById('status-indicator');
 const statusText = document.getElementById('status-text');
 const toggleDebugButton = document.getElementById('toggleDebugButton');
 const debugWindow = document.getElementById('debugWindow');
+
+// Global state
+let abortController = null;
+let currentTranscription = '';
 
 // Debug utility
 function logToDebug(message) {
@@ -37,6 +47,10 @@ function initApp() {
   // Event listeners
   toggleDebugButton.addEventListener('click', toggleDebugConsole);
   transcribeButton.addEventListener('click', handleTranscriptionRequest);
+  cancelButton.addEventListener('click', handleCancelReset);
+  copyTranscriptButton.addEventListener('click', copyTranscriptToClipboard);
+  createSummaryButton.addEventListener('click', generateSummary);
+  copySummaryButton.addEventListener('click', copySummaryToClipboard);
   audioFileInput.addEventListener('change', handleFileSelection);
 }
 
@@ -60,6 +74,10 @@ function handleFileSelection(event) {
     // Reset transcription output
     transcriptionOutput.textContent = '';
     
+    // Hide summary container when new file is selected
+    summaryContainer.classList.add('hidden');
+    summaryOutput.textContent = '';
+    
     // Estimate base64 size and log information
     const estimatedBase64Size = estimateBase64Size(file.size);
     logToDebug(`File selected: ${file.name} (${formatFileSize(file.size)})`);
@@ -71,6 +89,173 @@ function handleFileSelection(event) {
       logToDebug(`File will require chunking (base64 size exceeds 30MB)`);
     }
   }
+}
+
+// Handle cancel/reset
+function handleCancelReset() {
+  // Cancel ongoing API requests
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+    logToDebug('Transcription cancelled');
+  }
+  
+  // Reset the form
+  audioFileInput.value = '';
+  transcriptionOutput.textContent = '';
+  summaryOutput.textContent = '';
+  audioPlayer.src = '';
+  audioPlayerContainer.classList.add('hidden');
+  summaryContainer.classList.add('hidden');
+  
+  // Hide status indicator
+  hideStatus();
+  
+  // Reset global state
+  currentTranscription = '';
+  
+  logToDebug('App reset');
+}
+
+// Copy transcript to clipboard
+function copyTranscriptToClipboard() {
+  if (!transcriptionOutput.textContent.trim()) {
+    showToast('No transcript to copy', false);
+    return;
+  }
+  
+  navigator.clipboard.writeText(transcriptionOutput.textContent)
+    .then(() => {
+      showToast('Transcript copied to clipboard');
+      logToDebug('Transcript copied to clipboard');
+    })
+    .catch(err => {
+      showToast('Failed to copy transcript', false);
+      logToDebug(`Copy error: ${err.message}`);
+    });
+}
+
+// Copy summary to clipboard
+function copySummaryToClipboard() {
+  if (!summaryOutput.textContent.trim()) {
+    showToast('No summary to copy', false);
+    return;
+  }
+  
+  navigator.clipboard.writeText(summaryOutput.textContent)
+    .then(() => {
+      showToast('Summary copied to clipboard');
+      logToDebug('Summary copied to clipboard');
+    })
+    .catch(err => {
+      showToast('Failed to copy summary', false);
+      logToDebug(`Copy error: ${err.message}`);
+    });
+}
+
+// Generate meeting summary
+async function generateSummary() {
+  if (!currentTranscription.trim()) {
+    showToast('No transcript to summarize', false);
+    return;
+  }
+  
+  try {
+    // Show processing status
+    showStatus('Generating summary...');
+    summaryOutput.textContent = '';
+    summaryContainer.classList.remove('hidden');
+    
+    logToDebug('Starting summary generation');
+    
+    // Initialize Gemini API
+    const genAI = new GoogleGenerativeAI(API_KEY);
+    const model = genAI.getGenerativeModel({ 
+      model: GEMINI_MODEL,
+      generationConfig: {
+        temperature: 0.2,
+        topP: 0.95,
+        topK: 64,
+      }
+    });
+    
+    // Create summary prompt
+    const prompt = `
+      I'm providing a transcript of a meeting. Please create a concise summary with the following sections:
+
+      1. Key Discussion Points - The main topics discussed in bullet points
+      2. Key Decisions - Any decisions made during the meeting
+      3. Action Items - Tasks assigned or mentioned with responsible parties if specified
+
+      Keep the summary clear and focused on the most important information.
+
+      Here's the transcript:
+      ${currentTranscription}
+    `;
+    
+    // Create a new AbortController for this request
+    abortController = new AbortController();
+    
+    // Generate content
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    }, { signal: abortController.signal });
+    
+    const response = result.response;
+    const summary = response.text();
+    
+    // Display summary
+    summaryOutput.textContent = summary;
+    logToDebug('Summary generated successfully');
+    
+    // Hide status indicator
+    hideStatus();
+    
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      logToDebug('Summary generation aborted');
+    } else {
+      console.error("Summary generation error:", error);
+      showError(`Error generating summary: ${error.message}`);
+      logToDebug(`ERROR: ${error.message}`);
+    }
+    hideStatus();
+  } finally {
+    abortController = null;
+  }
+}
+
+// Show toast notification
+function showToast(message, success = true) {
+  // Remove existing toast if any
+  const existingToast = document.querySelector('.toast');
+  if (existingToast) {
+    document.body.removeChild(existingToast);
+  }
+  
+  // Create new toast
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  
+  if (!success) {
+    toast.style.backgroundColor = 'var(--error-color)';
+  }
+  
+  document.body.appendChild(toast);
+  
+  // Show toast
+  setTimeout(() => {
+    toast.classList.add('show');
+  }, 10);
+  
+  // Hide toast after 3 seconds
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => {
+      document.body.removeChild(toast);
+    }, 300);
+  }, 3000);
 }
 
 // Get appropriate MIME type for audio/video files
@@ -157,8 +342,16 @@ async function handleTranscriptionRequest() {
     // Show processing status
     showStatus('Preparing to transcribe...');
     transcriptionOutput.textContent = '';
+    currentTranscription = '';
+    
+    // Hide summary if previously generated
+    summaryContainer.classList.add('hidden');
+    summaryOutput.textContent = '';
     
     logToDebug('Starting transcription process');
+    
+    // Create a new AbortController for this request
+    abortController = new AbortController();
     
     // Initialize Gemini API
     const genAI = new GoogleGenerativeAI(API_KEY);
@@ -178,9 +371,16 @@ async function handleTranscriptionRequest() {
     hideStatus();
     
   } catch (error) {
-    console.error("Transcription error:", error);
-    showError(`Error: ${error.message}`);
-    logToDebug(`ERROR: ${error.message}`);
+    if (error.name === 'AbortError') {
+      logToDebug('Transcription aborted');
+    } else {
+      console.error("Transcription error:", error);
+      showError(`Error: ${error.message}`);
+      logToDebug(`ERROR: ${error.message}`);
+    }
+    hideStatus();
+  } finally {
+    abortController = null;
   }
 }
 
@@ -190,6 +390,11 @@ async function processLargeFile(file, model) {
   let fullTranscription = '';
   
   for (let i = 0; i < chunks.length; i++) {
+    // Check if transcription has been cancelled
+    if (!abortController || abortController.signal.aborted) {
+      throw new DOMException('Transcription aborted by user', 'AbortError');
+    }
+    
     showStatus(`Processing chunk ${i + 1} of ${chunks.length}...`);
     logToDebug(`Processing chunk ${i + 1} of ${chunks.length}`);
     
@@ -205,11 +410,18 @@ async function processLargeFile(file, model) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     } catch (error) {
+      if (error.name === 'AbortError') {
+        throw error; // Re-throw abort errors
+      }
+      
       logToDebug(`Error with chunk ${i + 1}: ${error.message}`);
       // Continue with next chunk instead of failing completely
       fullTranscription += ` [Error transcribing part ${i + 1}] `;
     }
   }
+  
+  // Save current transcription for summary generation
+  currentTranscription = fullTranscription;
   
   // Final display with complete transcription
   displayResult(fullTranscription);
@@ -219,6 +431,11 @@ async function processLargeFile(file, model) {
 // Core transcription function
 async function transcribeAudio(file, model, chunkIndex, totalChunks) {
   try {
+    // Check if transcription has been cancelled
+    if (!abortController || abortController.signal.aborted) {
+      throw new DOMException('Transcription aborted by user', 'AbortError');
+    }
+    
     // Read file as ArrayBuffer
     const arrayBuffer = await readFileAsArrayBuffer(file);
     
@@ -251,8 +468,11 @@ async function transcribeAudio(file, model, chunkIndex, totalChunks) {
     
     logToDebug('Sending to Gemini API...');
     
-    // Generate content
-    const result = await model.generateContent({ contents });
+    // Generate content with abort signal
+    const result = await model.generateContent({
+      contents
+    }, { signal: abortController.signal });
+    
     const response = result.response;
     
     logToDebug('Received response from Gemini API');
