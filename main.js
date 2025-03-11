@@ -63,6 +63,7 @@ function handleFileSelection(event) {
     // Estimate base64 size and log information
     const estimatedBase64Size = estimateBase64Size(file.size);
     logToDebug(`File selected: ${file.name} (${formatFileSize(file.size)})`);
+    logToDebug(`File type: ${file.type}`);
     logToDebug(`Estimated base64 size: ${formatFileSize(estimatedBase64Size)}`);
     
     // Automatically determine if chunking will be needed
@@ -70,6 +71,29 @@ function handleFileSelection(event) {
       logToDebug(`File will require chunking (base64 size exceeds 30MB)`);
     }
   }
+}
+
+// Get appropriate MIME type for audio files
+function getAudioMimeType(file) {
+  // If the file already has a valid MIME type, use it
+  if (file.type && file.type.startsWith('audio/')) {
+    return file.type;
+  }
+  
+  // Otherwise, try to determine from file extension
+  const extension = file.name.split('.').pop().toLowerCase();
+  
+  const mimeTypes = {
+    'mp3': 'audio/mpeg',
+    'wav': 'audio/wav',
+    'ogg': 'audio/ogg',
+    'webm': 'audio/webm',
+    'm4a': 'audio/mp4',
+    'aac': 'audio/aac',
+    'flac': 'audio/flac'
+  };
+  
+  return mimeTypes[extension] || 'audio/mpeg'; // Default to audio/mpeg if unknown
 }
 
 // Estimate base64 encoded size of a file (bytes)
@@ -95,6 +119,15 @@ function chunkFile(file) {
   while (start < fileSize) {
     const end = Math.min(start + MAX_CHUNK_SIZE, fileSize);
     const chunk = file.slice(start, end);
+    // Preserve the original file type and name for each chunk
+    Object.defineProperty(chunk, 'type', {
+      value: file.type,
+      writable: false
+    });
+    Object.defineProperty(chunk, 'name', {
+      value: file.name,
+      writable: false
+    });
     chunks.push(chunk);
     start = end;
   }
@@ -185,11 +218,20 @@ async function transcribeAudio(file, model) {
     const base64Data = Base64.fromByteArray(new Uint8Array(arrayBuffer));
     logToDebug(`Chunk actual base64 size: ${formatFileSize(base64Data.length)}`);
     
+    // Get appropriate MIME type
+    const mimeType = getAudioMimeType(file);
+    logToDebug(`Using MIME type: ${mimeType}`);
+    
     // Prepare content for Gemini API
     const contents = [
       {
         role: 'user',
-        parts: [{ inline_data: { mime_type: file.type, data: base64Data } }]
+        parts: [{ 
+          inline_data: { 
+            mime_type: mimeType, 
+            data: base64Data 
+          } 
+        }]
       }
     ];
     
