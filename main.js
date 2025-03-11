@@ -199,6 +199,16 @@ async function copySummaryToClipboard() {
   }
 }
 
+// Clean Markdown formatting from text
+function cleanMarkdownFormat(text) {
+  // Replace Markdown formatting with clean formatting
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold asterisks
+    .replace(/\*(.*?)\*/g, '• $1')   // Replace bullets with proper bullet points
+    .replace(/#{1,6}\s+(.+)/g, '$1') // Remove heading markers
+    .replace(/\n\s*\n/g, '\n\n');    // Normalize line spacing
+}
+
 // Generate meeting summary
 async function generateSummary() {
   if (!currentTranscription.trim()) {
@@ -228,11 +238,15 @@ async function generateSummary() {
     const prompt = `
       I'm providing a transcript of a meeting. Please create a concise summary with the following sections:
 
-      1. Key Discussion Points - The main topics discussed in bullet points
-      2. Key Decisions - Any decisions made during the meeting
+      1. Key Discussion Points
+      2. Key Decisions 
       3. Action Items - Tasks assigned or mentioned with responsible parties if specified
 
-      Keep the summary clear and focused on the most important information.
+      Format requirements:
+      - Use plain text formatting (no Markdown)
+      - Each section should have a clear heading
+      - Use bullet points with "•" symbol (not asterisks or dashes)
+      - Keep the summary clear and focused on the most important information
 
       Here's the transcript:
       ${currentTranscription}
@@ -247,7 +261,10 @@ async function generateSummary() {
     }, { signal: abortController.signal });
     
     const response = result.response;
-    const summary = response.text();
+    let summary = response.text();
+    
+    // Clean up any remaining Markdown formatting
+    summary = cleanMarkdownFormat(summary);
     
     // Display summary
     summaryOutput.textContent = summary;
