@@ -16,6 +16,13 @@
       <button id="transcribeButton">Transcribe</button>
     </div>
     
+    <div class="options-container">
+      <label class="option-label">
+        <input type="checkbox" id="diarizationToggle">
+        <span>Enable Speaker Identification</span>
+      </label>
+    </div>
+    
     <div id="status-indicator" class="status hidden">
       <div class="spinner"></div>
       <span id="status-text">Processing...</span>
@@ -36,9 +43,7 @@
 
   <footer>
     <button id="toggleDebugButton" class="debug-toggle">Toggle Debug Console</button>
-    <div id="debugWindow" class="debug-console" style="display: none;">
-
-    </div>
+    <div id="debugWindow" class="debug-console" style="display: none;"></div>
   </footer>
 
   <script type="module" src="/main.js"></script>
