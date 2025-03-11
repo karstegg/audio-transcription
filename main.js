@@ -18,6 +18,7 @@ const statusIndicator = document.getElementById('status-indicator');
 const statusText = document.getElementById('status-text');
 const toggleDebugButton = document.getElementById('toggleDebugButton');
 const debugWindow = document.getElementById('debugWindow');
+const diarizationToggle = document.getElementById('diarizationToggle');
 
 // Debug utility
 function logToDebug(message) {
@@ -194,7 +195,7 @@ async function processLargeFile(file, model) {
     logToDebug(`Processing chunk ${i + 1} of ${chunks.length}`);
     
     try {
-      const chunkTranscription = await transcribeAudio(chunks[i], model);
+      const chunkTranscription = await transcribeAudio(chunks[i], model, i + 1, chunks.length);
       fullTranscription += chunkTranscription + ' ';
       
       // Update with partial results
@@ -217,7 +218,7 @@ async function processLargeFile(file, model) {
 }
 
 // Core transcription function
-async function transcribeAudio(file, model) {
+async function transcribeAudio(file, model, chunkIndex, totalChunks) {
   try {
     // Read file as ArrayBuffer
     const arrayBuffer = await readFileAsArrayBuffer(file);
@@ -230,12 +231,30 @@ async function transcribeAudio(file, model) {
     const mimeType = getAudioMimeType(file);
     logToDebug(`Using MIME type: ${mimeType}`);
     
-    // Prepare content for Gemini API with specific instruction for verbatim transcription
+    // Check if diarization is enabled
+    const diarizationEnabled = diarizationToggle && diarizationToggle.checked;
+    
+    // Prepare prompt based on diarization setting
+    let prompt;
+    if (diarizationEnabled) {
+      prompt = `Please transcribe this ${chunkIndex ? `part ${chunkIndex} of ${totalChunks} of the` : ''} audio with speaker diarization. Identify different speakers and label them as Speaker 1, Speaker 2, etc. Format the transcript with speaker labels at the start of each turn like this:
+
+Speaker 1: [transcribed text]
+Speaker 2: [transcribed text]
+
+The transcription should be verbatim including filler words, stutters, and false starts. Don't add any commentary or summarization.`;
+    } else {
+      prompt = `Please provide a verbatim transcription of this ${chunkIndex ? `part ${chunkIndex} of ${totalChunks} of the` : ''} audio. Include all spoken words exactly as heard, with no summarization, commentary, or analysis. Include filler words, stutters, and false starts. Just transcribe the exact speech.`;
+    }
+    
+    logToDebug(`Using ${diarizationEnabled ? 'diarization' : 'standard'} prompt`);
+    
+    // Prepare content for Gemini API
     const contents = [
       {
         role: 'user',
         parts: [
-          { text: "Please provide a verbatim transcription of this audio. Include all spoken words exactly as heard, with no summarization, commentary, or analysis. Just transcribe the exact speech." }, 
+          { text: prompt }, 
           { 
             inline_data: { 
               mime_type: mimeType, 
