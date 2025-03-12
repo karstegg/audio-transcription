@@ -11,23 +11,13 @@ const API_KEY = CONFIG.gemini.apiKey;
 // DOM Elements
 const audioFileInput = document.getElementById('audioFileInput');
 const transcribeButton = document.getElementById('transcribeButton');
-const cancelButton = document.getElementById('cancelButton');
-const copyTranscriptButton = document.getElementById('copyTranscriptButton');
-const createSummaryButton = document.getElementById('createSummaryButton');
-const copySummaryButton = document.getElementById('copySummaryButton');
 const transcriptionOutput = document.getElementById('transcriptionOutput');
-const summaryOutput = document.getElementById('summaryOutput');
-const summaryContainer = document.getElementById('summary-container');
 const audioPlayer = document.getElementById('audioPlayer');
 const audioPlayerContainer = document.getElementById('audio-player-container');
 const statusIndicator = document.getElementById('status-indicator');
 const statusText = document.getElementById('status-text');
 const toggleDebugButton = document.getElementById('toggleDebugButton');
 const debugWindow = document.getElementById('debugWindow');
-
-// Global state
-let abortController = null;
-let currentTranscription = '';
 
 // Debug utility
 function logToDebug(message) {
@@ -44,16 +34,9 @@ function initApp() {
   // Check for API key and show banner if needed
   maybeShowApiKeyBanner(API_KEY);
   
-  // Make summary container visible by default
-  summaryContainer.classList.remove('hidden');
-  
   // Event listeners
   toggleDebugButton.addEventListener('click', toggleDebugConsole);
   transcribeButton.addEventListener('click', handleTranscriptionRequest);
-  cancelButton.addEventListener('click', handleCancelReset);
-  copyTranscriptButton.addEventListener('click', copyTranscriptToClipboard);
-  createSummaryButton.addEventListener('click', generateSummary);
-  copySummaryButton.addEventListener('click', copySummaryToClipboard);
   audioFileInput.addEventListener('change', handleFileSelection);
 }
 
@@ -77,9 +60,6 @@ function handleFileSelection(event) {
     // Reset transcription output
     transcriptionOutput.textContent = '';
     
-    // Reset summary output
-    summaryOutput.textContent = '';
-    
     // Estimate base64 size and log information
     const estimatedBase64Size = estimateBase64Size(file.size);
     logToDebug(`File selected: ${file.name} (${formatFileSize(file.size)})`);
@@ -93,231 +73,80 @@ function handleFileSelection(event) {
   }
 }
 
-// Handle cancel/reset
-function handleCancelReset() {
-  // Cancel ongoing API requests
-  if (abortController) {
-    abortController.abort();
-    abortController = null;
-    logToDebug('Transcription cancelled');
-  }
-  
-  // Reset the form
-  audioFileInput.value = '';
-  transcriptionOutput.textContent = '';
-  summaryOutput.textContent = '';
-  audioPlayer.src = '';
-  audioPlayerContainer.classList.add('hidden');
-  
-  // Hide status indicator
-  hideStatus();
-  
-  // Reset global state
-  currentTranscription = '';
-  
-  logToDebug('App reset');
-}
-
-// Fallback copy text function (for browsers with restricted Clipboard API)
-function copyTextToClipboard(text) {
-  // Create a temporary textarea element
-  const textarea = document.createElement('textarea');
-  textarea.value = text;
-  
-  // Make the textarea out of viewport
-  textarea.style.position = 'fixed';
-  textarea.style.left = '-999999px';
-  textarea.style.top = '-999999px';
-  document.body.appendChild(textarea);
-  
-  // Select and copy
-  textarea.select();
-  let success = false;
-  
-  try {
-    success = document.execCommand('copy');
-  } catch (err) {
-    logToDebug(`Copy error: ${err.message}`);
-    success = false;
-  }
-  
-  // Remove the textarea
-  document.body.removeChild(textarea);
-  return success;
-}
-
-// Copy text with fallback
-async function copyText(text) {
-  let success = false;
-  
-  // Try modern Clipboard API first
-  try {
-    await navigator.clipboard.writeText(text);
-    success = true;
-  } catch (err) {
-    logToDebug(`Clipboard API error: ${err.message}. Trying fallback method...`);
-    // Use fallback method
-    success = copyTextToClipboard(text);
-  }
-  
-  return success;
-}
-
-// Copy transcript to clipboard
-async function copyTranscriptToClipboard() {
-  if (!transcriptionOutput.textContent.trim()) {
-    showToast('No transcript to copy', false);
-    return;
-  }
-  
-  const success = await copyText(transcriptionOutput.textContent);
-  
-  if (success) {
-    showToast('Transcript copied to clipboard');
-    logToDebug('Transcript copied to clipboard');
-  } else {
-    showToast('Failed to copy transcript', false);
-    logToDebug('Failed to copy transcript');
-  }
-}
-
-// Copy summary to clipboard
-async function copySummaryToClipboard() {
-  if (!summaryOutput.textContent.trim()) {
-    showToast('No summary to copy', false);
-    return;
-  }
-  
-  const success = await copyText(summaryOutput.textContent);
-  
-  if (success) {
-    showToast('Summary copied to clipboard');
-    logToDebug('Summary copied to clipboard');
-  } else {
-    showToast('Failed to copy summary', false);
-    logToDebug('Failed to copy summary');
-  }
-}
-
-// Clean Markdown formatting from text
-function cleanMarkdownFormat(text) {
-  // Replace Markdown formatting with clean formatting
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold asterisks
-    .replace(/\*(.*?)\*/g, '• $1')   // Replace bullets with proper bullet points
-    .replace(/#{1,6}\s+(.+)/g, '$1') // Remove heading markers
-    .replace(/\n\s*\n/g, '\n\n');    // Normalize line spacing
-}
-
-// Generate meeting summary
-async function generateSummary() {
-  if (!currentTranscription.trim()) {
-    showToast('No transcript to summarize', false);
-    return;
-  }
-  
-  try {
-    // Show processing status
-    showStatus('Generating summary...');
-    summaryOutput.textContent = '';
+// Extract audio from video file efficiently
+async function extractAudioFromVideo(videoFile, statusCallback) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.src = URL.createObjectURL(videoFile);
+    video.muted = true;
     
-    logToDebug('Starting summary generation');
+    // Set up audio processing
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaElementSource(video);
+    const destination = audioContext.createMediaStreamDestination();
+    source.connect(destination);
     
-    // Initialize Gemini API
-    const genAI = new GoogleGenerativeAI(API_KEY);
-    const model = genAI.getGenerativeModel({ 
-      model: GEMINI_MODEL,
-      generationConfig: {
-        temperature: 0.2,
-        topP: 0.95,
-        topK: 64,
+    // Set very high playback rate to speed up extraction
+    // Maximum value that works reliably across browsers
+    video.playbackRate = 16;
+    
+    // Record the audio stream
+    const recorder = new MediaRecorder(destination.stream);
+    const audioChunks = [];
+    
+    // Track progress
+    let lastUpdateTime = 0;
+    const updateInterval = 500; // Update status every 500ms
+    
+    video.addEventListener('timeupdate', () => {
+      const now = Date.now();
+      if (now - lastUpdateTime > updateInterval) {
+        const progress = Math.round((video.currentTime / video.duration) * 100);
+        if (statusCallback && !isNaN(progress)) {
+          statusCallback(`Extracting audio: ${progress}% complete`);
+        }
+        lastUpdateTime = now;
       }
     });
     
-    // Create summary prompt
-    const prompt = `
-      I'm providing a transcript of a meeting. Please create a concise summary with the following sections:
-
-      1. Key Discussion Points
-      2. Key Decisions 
-      3. Action Items - Tasks assigned or mentioned with responsible parties if specified
-
-      Format requirements:
-      - Use plain text formatting (no Markdown)
-      - Each section should have a clear heading
-      - Use bullet points with "•" symbol (not asterisks or dashes)
-      - Keep the summary clear and focused on the most important information
-
-      Here's the transcript:
-      ${currentTranscription}
-    `;
+    recorder.ondataavailable = e => audioChunks.push(e.data);
     
-    // Create a new AbortController for this request
-    abortController = new AbortController();
+    recorder.onstop = () => {
+      URL.revokeObjectURL(video.src);
+      video.remove();
+      
+      // Create audio blob with optimized metadata
+      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+      
+      // Add a name property to the blob for better handling
+      Object.defineProperty(audioBlob, 'name', {
+        value: videoFile.name.replace(/\.[^/.]+$/, '') + '.wav',
+        writable: false
+      });
+      
+      resolve(audioBlob);
+    };
     
-    // Generate content
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    }, { signal: abortController.signal });
+    // Start recording when video can play
+    video.oncanplay = () => {
+      recorder.start();
+      video.play();
+    };
     
-    const response = result.response;
-    let summary = response.text();
+    // Stop when video ends
+    video.onended = () => {
+      recorder.stop();
+    };
     
-    // Clean up any remaining Markdown formatting
-    summary = cleanMarkdownFormat(summary);
+    // Handle errors
+    video.onerror = (e) => {
+      reject(new Error(`Video error: ${e.target.error.message}`));
+    };
     
-    // Display summary
-    summaryOutput.textContent = summary;
-    logToDebug('Summary generated successfully');
-    
-    // Hide status indicator
-    hideStatus();
-    
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      logToDebug('Summary generation aborted');
-    } else {
-      console.error("Summary generation error:", error);
-      showError(`Error generating summary: ${error.message}`);
-      logToDebug(`ERROR: ${error.message}`);
-    }
-    hideStatus();
-  } finally {
-    abortController = null;
-  }
-}
-
-// Show toast notification
-function showToast(message, success = true) {
-  // Remove existing toast if any
-  const existingToast = document.querySelector('.toast');
-  if (existingToast) {
-    document.body.removeChild(existingToast);
-  }
-  
-  // Create new toast
-  const toast = document.createElement('div');
-  toast.className = 'toast';
-  toast.textContent = message;
-  
-  if (!success) {
-    toast.style.backgroundColor = 'var(--error-color)';
-  }
-  
-  document.body.appendChild(toast);
-  
-  // Show toast
-  setTimeout(() => {
-    toast.classList.add('show');
-  }, 10);
-  
-  // Hide toast after 3 seconds
-  setTimeout(() => {
-    toast.classList.remove('show');
-    setTimeout(() => {
-      document.body.removeChild(toast);
-    }, 300);
-  }, 3000);
+    recorder.onerror = (e) => {
+      reject(new Error(`Recording error: ${e}`));
+    };
+  });
 }
 
 // Get appropriate MIME type for audio/video files
@@ -375,17 +204,15 @@ function chunkFile(file) {
   while (start < fileSize) {
     const end = Math.min(start + effectiveChunkSize, fileSize);
     const chunk = file.slice(start, end);
-    
     // Preserve the original file type and name for each chunk
     Object.defineProperty(chunk, 'type', {
-      value: file.type || getAudioMimeType(file),
+      value: file.type,
       writable: false
     });
     Object.defineProperty(chunk, 'name', {
       value: file.name,
       writable: false
     });
-    
     chunks.push(chunk);
     start = end;
   }
@@ -407,16 +234,8 @@ async function handleTranscriptionRequest() {
     // Show processing status
     showStatus('Preparing to transcribe...');
     transcriptionOutput.textContent = '';
-    currentTranscription = '';
-    
-    // Reset summary output
-    summaryOutput.textContent = '';
     
     logToDebug('Starting transcription process');
-    logToDebug(`File type: ${file.type}`);
-    
-    // Create a new AbortController for this request
-    abortController = new AbortController();
     
     // Initialize Gemini API
     const genAI = new GoogleGenerativeAI(API_KEY);
@@ -429,23 +248,35 @@ async function handleTranscriptionRequest() {
       }
     });
     
-    // Direct processing of audio/video file without extraction
-    await processLargeFile(file, model);
+    // Check if it's a video file
+    if (file.type.startsWith('video/')) {
+      logToDebug('Video file detected, extracting audio for better chunk processing');
+      try {
+        const audioFile = await extractAudioFromVideo(file, showStatus);
+        logToDebug(`Audio extracted from video: ${formatFileSize(audioFile.size)}`);
+        
+        // Process the extracted audio
+        await processLargeFile(audioFile, model);
+      } catch (extractError) {
+        logToDebug(`Audio extraction failed: ${extractError.message}`);
+        logToDebug('Falling back to direct video processing');
+        
+        // Fall back to direct processing
+        await processLargeFile(file, model);
+      }
+    } else {
+      // Regular audio file processing
+      await processLargeFile(file, model);
+    }
     
     // Hide status indicator when done
     hideStatus();
     
   } catch (error) {
-    if (error.name === 'AbortError') {
-      logToDebug('Transcription aborted');
-    } else {
-      console.error("Transcription error:", error);
-      showError(`Error: ${error.message}`);
-      logToDebug(`ERROR: ${error.message}`);
-    }
+    console.error("Transcription error:", error);
+    showError(`Error: ${error.message}`);
+    logToDebug(`ERROR: ${error.message}`);
     hideStatus();
-  } finally {
-    abortController = null;
   }
 }
 
@@ -455,11 +286,6 @@ async function processLargeFile(file, model) {
   let fullTranscription = '';
   
   for (let i = 0; i < chunks.length; i++) {
-    // Check if transcription has been cancelled
-    if (!abortController || abortController.signal.aborted) {
-      throw new DOMException('Transcription aborted by user', 'AbortError');
-    }
-    
     showStatus(`Processing chunk ${i + 1} of ${chunks.length}...`);
     logToDebug(`Processing chunk ${i + 1} of ${chunks.length}`);
     
@@ -475,18 +301,11 @@ async function processLargeFile(file, model) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
     } catch (error) {
-      if (error.name === 'AbortError') {
-        throw error; // Re-throw abort errors
-      }
-      
       logToDebug(`Error with chunk ${i + 1}: ${error.message}`);
       // Continue with next chunk instead of failing completely
       fullTranscription += ` [Error transcribing part ${i + 1}] `;
     }
   }
-  
-  // Save current transcription for summary generation
-  currentTranscription = fullTranscription;
   
   // Final display with complete transcription
   displayResult(fullTranscription);
@@ -496,14 +315,6 @@ async function processLargeFile(file, model) {
 // Core transcription function
 async function transcribeAudio(file, model, chunkIndex, totalChunks) {
   try {
-    // Check if transcription has been cancelled
-    if (!abortController || abortController.signal.aborted) {
-      throw new DOMException('Transcription aborted by user', 'AbortError');
-    }
-    
-    // Log MIME type to debug
-    logToDebug(`Chunk MIME type: ${file.type}`);
-    
     // Read file as ArrayBuffer
     const arrayBuffer = await readFileAsArrayBuffer(file);
     
@@ -511,19 +322,24 @@ async function transcribeAudio(file, model, chunkIndex, totalChunks) {
     const base64Data = Base64.fromByteArray(new Uint8Array(arrayBuffer));
     logToDebug(`Chunk actual base64 size: ${formatFileSize(base64Data.length)}`);
     
-    // Get appropriate MIME type, ensuring it's preserved from the chunk
-    const mimeType = file.type || getAudioMimeType(file);
-    logToDebug(`Using MIME type for API: ${mimeType}`);
+    // Get appropriate MIME type
+    const mimeType = getAudioMimeType(file);
+    logToDebug(`Using MIME type: ${mimeType}`);
     
-    // Prepare prompt for verbatim transcription
-    const prompt = `Please provide a verbatim transcription of this ${chunkIndex ? `part ${chunkIndex} of ${totalChunks} of the` : ''} ${mimeType.startsWith('video/') ? 'video' : 'audio'}. Include all spoken words exactly as heard, with no summarization, commentary, or analysis. Include filler words, stutters, and false starts. Just transcribe the exact speech.`;
+    // Prepare prompt based on chunk position
+    let promptText = "Please provide a verbatim transcription of this audio. Include all spoken words exactly as heard, with no summarization, commentary, or analysis. Just transcribe the exact speech.";
     
-    // Prepare content for Gemini API
+    // For non-first chunks, add context that this is a continuation
+    if (chunkIndex && chunkIndex > 1) {
+      promptText = `This is part ${chunkIndex} of ${totalChunks} of the same audio. Please continue the verbatim transcription from where the previous part left off. Include all spoken words exactly as heard.`;
+    }
+    
+    // Prepare content for Gemini API 
     const contents = [
       {
         role: 'user',
         parts: [
-          { text: prompt }, 
+          { text: promptText }, 
           { 
             inline_data: { 
               mime_type: mimeType, 
@@ -536,11 +352,8 @@ async function transcribeAudio(file, model, chunkIndex, totalChunks) {
     
     logToDebug('Sending to Gemini API...');
     
-    // Generate content with abort signal
-    const result = await model.generateContent({
-      contents
-    }, { signal: abortController.signal });
-    
+    // Generate content
+    const result = await model.generateContent({ contents });
     const response = result.response;
     
     logToDebug('Received response from Gemini API');
