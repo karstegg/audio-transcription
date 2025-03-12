@@ -343,7 +343,8 @@ function getAudioMimeType(file) {
     'mp4': 'video/mp4',
     'mov': 'video/quicktime',
     'avi': 'video/x-msvideo',
-    'mkv': 'video/x-matroska'
+    'mkv': 'video/x-matroska',
+    'mpeg': 'video/mpeg'
   };
   
   return mimeTypes[extension] || 'audio/mpeg'; // Default to audio/mpeg if unknown
@@ -374,15 +375,17 @@ function chunkFile(file) {
   while (start < fileSize) {
     const end = Math.min(start + effectiveChunkSize, fileSize);
     const chunk = file.slice(start, end);
+    
     // Preserve the original file type and name for each chunk
     Object.defineProperty(chunk, 'type', {
-      value: file.type,
+      value: file.type || getAudioMimeType(file),
       writable: false
     });
     Object.defineProperty(chunk, 'name', {
       value: file.name,
       writable: false
     });
+    
     chunks.push(chunk);
     start = end;
   }
@@ -410,6 +413,7 @@ async function handleTranscriptionRequest() {
     summaryOutput.textContent = '';
     
     logToDebug('Starting transcription process');
+    logToDebug(`File type: ${file.type}`);
     
     // Create a new AbortController for this request
     abortController = new AbortController();
@@ -425,7 +429,7 @@ async function handleTranscriptionRequest() {
       }
     });
     
-    // All files should be chunked for consistency
+    // Direct processing of audio/video file without extraction
     await processLargeFile(file, model);
     
     // Hide status indicator when done
@@ -497,6 +501,9 @@ async function transcribeAudio(file, model, chunkIndex, totalChunks) {
       throw new DOMException('Transcription aborted by user', 'AbortError');
     }
     
+    // Log MIME type to debug
+    logToDebug(`Chunk MIME type: ${file.type}`);
+    
     // Read file as ArrayBuffer
     const arrayBuffer = await readFileAsArrayBuffer(file);
     
@@ -504,12 +511,12 @@ async function transcribeAudio(file, model, chunkIndex, totalChunks) {
     const base64Data = Base64.fromByteArray(new Uint8Array(arrayBuffer));
     logToDebug(`Chunk actual base64 size: ${formatFileSize(base64Data.length)}`);
     
-    // Get appropriate MIME type
-    const mimeType = getAudioMimeType(file);
-    logToDebug(`Using MIME type: ${mimeType}`);
+    // Get appropriate MIME type, ensuring it's preserved from the chunk
+    const mimeType = file.type || getAudioMimeType(file);
+    logToDebug(`Using MIME type for API: ${mimeType}`);
     
     // Prepare prompt for verbatim transcription
-    const prompt = `Please provide a verbatim transcription of this ${chunkIndex ? `part ${chunkIndex} of ${totalChunks} of the` : ''} audio. Include all spoken words exactly as heard, with no summarization, commentary, or analysis. Include filler words, stutters, and false starts. Just transcribe the exact speech.`;
+    const prompt = `Please provide a verbatim transcription of this ${chunkIndex ? `part ${chunkIndex} of ${totalChunks} of the` : ''} ${mimeType.startsWith('video/') ? 'video' : 'audio'}. Include all spoken words exactly as heard, with no summarization, commentary, or analysis. Include filler words, stutters, and false starts. Just transcribe the exact speech.`;
     
     // Prepare content for Gemini API
     const contents = [
