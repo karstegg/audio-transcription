@@ -2,7 +2,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import Base64 from 'base64-js';
 import { maybeShowApiKeyBanner } from './gemini-api-banner';
 import CONFIG from './config.js';
-import { extractAudioFromVideo } from './audioExtractor.js';
 
 // Get configuration values
 const MAX_CHUNK_SIZE = CONFIG.fileProcessing.maxChunkSize;
@@ -67,11 +66,6 @@ function toggleDebugConsole() {
   }
 }
 
-// Check if file is a video
-function isVideoFile(file) {
-  return file.type && file.type.startsWith('video/');
-}
-
 // Handle file selection
 function handleFileSelection(event) {
   const file = event.target.files[0];
@@ -95,11 +89,6 @@ function handleFileSelection(event) {
     // Automatically determine if chunking will be needed
     if (estimatedBase64Size > 30 * 1024 * 1024) {
       logToDebug(`File will require chunking (base64 size exceeds 30MB)`);
-    }
-    
-    // Notify if file is video
-    if (isVideoFile(file)) {
-      logToDebug('Video file detected - audio will be extracted before processing');
     }
   }
 }
@@ -402,34 +391,6 @@ function chunkFile(file) {
   return chunks;
 }
 
-// Extract audio from video file with progress updates
-async function prepareFileForTranscription(file) {
-  // If it's not a video file, return it as is
-  if (!isVideoFile(file)) {
-    return file;
-  }
-  
-  try {
-    logToDebug('Video file detected - extracting audio...');
-    showStatus('Extracting audio from video...');
-    
-    // Extract audio from video with progress updates
-    const audioFile = await extractAudioFromVideo(file, (progress) => {
-      showStatus(`Extracting audio: ${progress}%...`);
-    });
-    
-    logToDebug(`Audio extracted successfully (${formatFileSize(audioFile.size)})`);
-    
-    // Update audio player with extracted audio
-    audioPlayer.src = URL.createObjectURL(audioFile);
-    
-    return audioFile;
-  } catch (error) {
-    logToDebug(`Error extracting audio: ${error.message}`);
-    throw new Error(`Failed to extract audio from video: ${error.message}`);
-  }
-}
-
 // Handle transcription request
 async function handleTranscriptionRequest() {
   const file = audioFileInput.files[0];
@@ -464,11 +425,8 @@ async function handleTranscriptionRequest() {
       }
     });
     
-    // Prepare file - extract audio from video if needed
-    const preparedFile = await prepareFileForTranscription(file);
-    
     // All files should be chunked for consistency
-    await processLargeFile(preparedFile, model);
+    await processLargeFile(file, model);
     
     // Hide status indicator when done
     hideStatus();
