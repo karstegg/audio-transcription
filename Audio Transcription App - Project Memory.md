@@ -72,9 +72,11 @@ A web application using Google's Gemini API to transcribe audio and video files.
    - Enhanced UI with improved button styling
 
 6. **Video Support**
-   - Added audio extraction from video files
-   - Implemented Web Audio API for extraction
-   - Created progress reporting for extraction process
+   - Identified older working version (commit 79cc2c4) that processed video directly
+   - Initial implementation used direct video processing without audio extraction
+   - Successfully handled single-chunk videos without extraction
+   - Later added audio extraction to handle multi-chunk video failures
+   - Created Web Audio API for extraction with progress reporting
    - Fixed issues with video file chunks failing after first chunk
 
 ## Key Technical Decisions
@@ -111,8 +113,9 @@ A web application using Google's Gemini API to transcribe audio and video files.
 
 7. **Video File Processing**
    - **Problem**: Video files failed after first chunk in Gemini API
-   - **Solution**: Extract audio from video files before sending to Gemini
-   - **Implementation**: Created `audioExtractor.js` using Web Audio API, MediaRecorder, and faster-than-realtime playback
+   - **Solution A** (older commit 79cc2c4): Direct video processing with MIME type preservation
+   - **Solution B** (current): Extract audio from video files before sending to Gemini
+   - **Comparison**: Direct method worked for single-chunk videos but failed on multi-chunk videos
 
 ## Issues Addressed
 
@@ -142,7 +145,8 @@ A web application using Google's Gemini API to transcribe audio and video files.
 
 7. ✅ **Video Transcription Failures**
    - Issue: Video files failed after first chunk with "Request contains an invalid argument" error
-   - Solution: Added audio extraction from video files before transcription processing
+   - Solution A: Direct processing (commit 79cc2c4) worked for single chunks
+   - Solution B: Audio extraction from video files for reliable multi-chunk processing
 
 ## Future Improvements
 1. Export options (TXT, SRT)
