@@ -1,41 +1,123 @@
-# Original Working Video Transcription
+# Audio Transcription App with Dual API Support
 
-This branch contains the original implementation from commit [79cc2c4](https://github.com/karstegg/audio-transcription/commit/79cc2c4a9f177d7af299595af74a1bba2fb0dd7f) ("Fix transcription quality and chunk reliability") that correctly handled video transcription without requiring audio extraction.
+This application transcribes audio and video files using either Google Cloud Speech-to-Text API (simulated for demo) or Google's Gemini API, with a focus on accurate transcription and seamless user experience.
 
-## Key Features
+## Features
 
-- **Direct Video Processing**: Processes video files without extracting audio
-- **MIME Type Preservation**: Properly preserves MIME types across file chunks using `Object.defineProperty()`
-- **Optimized Chunk Size**: Uses a 15MB effective chunk size to account for base64 encoding overhead
-- **Verbatim Transcription**: Configures the Gemini API to focus on exact speech transcription
+- **Dual API Support**:
+  - Google Cloud Speech-to-Text API (simulated for demo purposes)
+  - Google Gemini API (for backward compatibility)
+
+- **Advanced Audio Processing**:
+  - Automatic audio extraction from video files
+  - Optimized chunking for large files
+  - Proper MIME type preservation
+
+- **Speech Recognition Options**:
+  - Multiple language support
+  - Specialized models (default, phone call, video)
+  - Speaker diarization (speaker identification)
+  - Automatic punctuation
+
+- **User-Friendly Interface**:
+  - Real-time progress tracking
+  - Debug console for troubleshooting
+  - Media preview for both audio and video
+
+## Demo Implementation Note
+
+This demo version simulates the Speech-to-Text API for development and testing purposes. The actual implementation would require:
+
+1. Installing the Google Cloud Speech-to-Text client library:
+   ```
+   npm install @google-cloud/speech
+   ```
+
+2. Setting up authentication:
+   ```
+   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your/service-account-key.json"
+   ```
 
 ## How It Works
 
-The implementation handles video files directly by:
+1. **File Upload**: Select any audio or video file for transcription
+2. **API Selection**: Choose between Speech-to-Text or Gemini API
+3. **Video Processing**: For video files, audio is extracted using Web Audio API at 16x speed
+4. **Chunking**: Large files are automatically split into appropriate chunks
+5. **Transcription**: Each chunk is sent to the selected API for processing
+6. **Result**: A complete transcription is displayed with proper formatting
 
-1. Preserving the original video file MIME type in each chunk:
-   ```javascript
-   Object.defineProperty(chunk, 'type', {
-     value: file.type,
-     writable: false
-   });
+## Speech-to-Text vs. Gemini API
+
+### Google Cloud Speech-to-Text API
+- **Advantages**:
+  - Purpose-built for speech recognition
+  - Better accuracy for different accents and background noise
+  - Speaker identification capabilities
+  - Per-minute pricing model (typically more cost-effective)
+  - Support for 120+ languages
+
+### Gemini API
+- **Advantages**:
+  - Broader content understanding
+  - Direct processing of media content
+  - Simpler authentication (API key only)
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js and npm
+- Google Cloud account for Speech-to-Text API (for production)
+- Google AI Studio account for Gemini API
+
+### Installation
+
+1. Clone this repository
+   ```
+   git clone https://github.com/karstegg/audio-transcription.git
+   cd audio-transcription
    ```
 
-2. Using a smaller chunk size to account for base64 encoding:
-   ```javascript
-   const effectiveChunkSize = 15 * 1024 * 1024; // 15MB instead of 22MB
+2. Install dependencies
+   ```
+   npm install
    ```
 
-3. Sending the video data directly to the Gemini API with the correct MIME type:
-   ```javascript
-   const mimeType = getAudioMimeType(file);
-   // ...
-   inline_data: { 
-     mime_type: mimeType, 
-     data: base64Data 
-   }
+3. Set up API credentials
+   - For Gemini: Update the API key in config.js
+   - For Speech-to-Text (production): Set up Google Cloud credentials
+
+4. Run the development server
+   ```
+   npm run dev
    ```
 
-This version successfully processes MP3 and video files without requiring audio extraction, making it faster and more efficient for single-chunk videos.
+## Configuration
 
-Note: Multi-chunk videos may encounter errors with the Gemini API due to video container format requirements.
+All application settings can be found in `config.js`, including:
+- API selection flags
+- Speech recognition options
+- File processing settings
+
+## Technical Implementation
+
+### Audio Extraction
+
+Video files are processed using the Web Audio API and MediaRecorder:
+
+```javascript
+// Create audio source from video element
+source = audioContext.createMediaElementSource(videoElement);
+
+// Set up MediaRecorder to capture the audio stream
+const audioStream = audioContext.createMediaStreamDestination();
+source.connect(audioStream);
+
+// Speed up processing
+videoElement.playbackRate = 16; // 16x speed
+```
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
