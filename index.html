@@ -11,9 +11,55 @@
 <body>
   <main>
     <h1>Audio Transcription App</h1>
+    
     <div class="upload-container">
       <input type="file" id="audioFileInput" accept="audio/*,video/*">
       <button id="transcribeButton">Transcribe</button>
+    </div>
+    
+    <div class="api-selector">
+      <label for="apiSelect">Transcription API:</label>
+      <select id="apiSelect">
+        <option value="speechToText" selected>Google Speech-to-Text</option>
+        <option value="gemini">Gemini AI</option>
+      </select>
+    </div>
+    
+    <div class="options-panel">
+      <h3>Speech Recognition Options</h3>
+      
+      <div class="option-row">
+        <label for="languageSelect">Language:</label>
+        <select id="languageSelect">
+          <option value="en-US">English (US)</option>
+          <option value="en-GB">English (UK)</option>
+          <option value="es-ES">Spanish</option>
+          <option value="fr-FR">French</option>
+          <option value="de-DE">German</option>
+          <option value="ja-JP">Japanese</option>
+          <option value="zh-CN">Chinese (Simplified)</option>
+        </select>
+      </div>
+      
+      <div class="option-row">
+        <label for="modelSelect">Model:</label>
+        <select id="modelSelect">
+          <option value="default">Default</option>
+          <option value="phone_call">Phone Call</option>
+          <option value="video">Video</option>
+          <option value="latest_short">Latest Short</option>
+        </select>
+      </div>
+      
+      <div class="option-row checkbox">
+        <input type="checkbox" id="enablePunctuation" checked>
+        <label for="enablePunctuation">Enable automatic punctuation</label>
+      </div>
+      
+      <div class="option-row checkbox">
+        <input type="checkbox" id="enableSpeakerDiarization">
+        <label for="enableSpeakerDiarization">Enable speaker detection (diarization)</label>
+      </div>
     </div>
     
     <div id="status-indicator" class="status hidden">
@@ -22,9 +68,10 @@
     </div>
     
     <div id="result-container">
-      <div id="audio-player-container" class="hidden">
-        <h3>Original Audio</h3>
-        <audio id="audioPlayer" controls></audio>
+      <div id="mediaPreviewContainer" class="hidden">
+        <h3>Media Preview</h3>
+        <video id="videoPlayer" controls style="display: none;"></video>
+        <audio id="audioPlayer" controls style="display: none;"></audio>
       </div>
       
       <div id="transcription-container">
@@ -37,7 +84,6 @@
   <footer>
     <button id="toggleDebugButton" class="debug-toggle">Toggle Debug Console</button>
     <div id="debugWindow" class="debug-console" style="display: none;">
-
     </div>
   </footer>
 
