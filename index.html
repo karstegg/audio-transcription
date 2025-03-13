@@ -82,11 +82,23 @@
   </main>
 
   <footer>
-    <button id="toggleDebugButton" class="debug-toggle">Toggle Debug Console</button>
+    <button id="toggleDebugButton" class="debug-toggle" onclick="toggleDebug()">Toggle Debug Console</button>
     <div id="debugWindow" class="debug-console" style="display: none;">
     </div>
   </footer>
 
-  <script type="module" src="/main.js"></script>
+  <!-- Fix: Use relative path without leading slash -->
+  <script type="module" src="main.js"></script>
+  
+  <!-- Add a simple inline script as a fallback for the debug toggle -->
+  <script>
+    function toggleDebug() {
+      const debugWindow = document.getElementById('debugWindow');
+      if (debugWindow) {
+        debugWindow.style.display = debugWindow.style.display === 'none' ? 'block' : 'none';
+        console.log('Debug console toggled via inline script');
+      }
+    }
+  </script>
 </body>
 </html>
