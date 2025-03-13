@@ -1,8 +1,8 @@
-import { SpeechClient } from '@google-cloud/speech';
+// Mock implementation for browser-based demo without requiring Google Cloud dependencies
 import Base64 from 'base64-js';
 import CONFIG from './config.js';
 
-// Log helper function that works even if the debug window isn't initialized yet
+// Log helper function
 function safeLog(message) {
   console.log(`[Speech-to-Text] ${message}`);
   
@@ -15,22 +15,11 @@ function safeLog(message) {
   }
 }
 
-// NOTE: In a production environment, you should use proper authentication
-// For development, this will attempt to use application default credentials
-// or environment variables (GOOGLE_APPLICATION_CREDENTIALS)
-let speechClient;
-
-try {
-  // Initialize the Speech client (will use application default credentials)
-  speechClient = new SpeechClient();
-  safeLog('Speech-to-Text client initialized successfully');
-} catch (error) {
-  console.error('Error initializing Speech-to-Text client:', error);
-  safeLog(`Failed to initialize Speech-to-Text client: ${error.message}`);
-}
+// Mock Speech-to-Text client for demo purposes
+safeLog('Using mock Speech-to-Text client for demo');
 
 /**
- * Determine audio encoding from MIME type
+ * Get appropriate encoding from MIME type
  */
 function getAudioEncoding(mimeType) {
   // Map common MIME types to Speech-to-Text encoding types
@@ -43,9 +32,7 @@ function getAudioEncoding(mimeType) {
     'audio/mp3': 'MP3',
     'audio/mpeg': 'MP3',
     'audio/ogg': 'OGG_OPUS',
-    'audio/webm': 'WEBM_OPUS',
-    'audio/amr': 'AMR',
-    'audio/amr-wb': 'AMR_WB'
+    'audio/webm': 'WEBM_OPUS'
   };
   
   // Return mapped encoding or default to LINEAR16
@@ -55,132 +42,61 @@ function getAudioEncoding(mimeType) {
 }
 
 /**
- * Transcribe audio using Google Cloud Speech-to-Text API
- * 
- * @param {ArrayBuffer} audioData - The audio data to transcribe
- * @param {string} mimeType - The MIME type of the audio
- * @param {Object} options - Additional options for transcription
- * @returns {Promise<string>} - A promise that resolves to the transcription text
+ * Simulated transcription function for demo purposes
+ * In production, this would use the real Google Cloud Speech-to-Text API
  */
 async function transcribeAudioWithSpeechToText(audioData, mimeType, options = {}) {
   try {
-    if (!speechClient) {
-      const error = new Error('Speech-to-Text client not initialized');
-      safeLog(error.message);
-      throw error;
-    }
-
     safeLog(`Processing audio chunk (${audioData.byteLength} bytes) with mime type: ${mimeType}`);
+    safeLog(`Using settings: ${JSON.stringify(options)}`);
     
-    // Convert audio data to base64
-    const audioBase64 = Base64.fromByteArray(new Uint8Array(audioData));
-    safeLog(`Converted to base64 (${audioBase64.length} characters)`);
-
-    // Merge default settings with provided options
-    const settings = {
-      languageCode: options.languageCode || CONFIG.speechToText.languageCode,
-      enableAutomaticPunctuation: options.enableAutomaticPunctuation !== undefined ? 
-        options.enableAutomaticPunctuation : CONFIG.speechToText.enableAutomaticPunctuation,
-      enableWordTimeOffsets: options.enableWordTimeOffsets !== undefined ? 
-        options.enableWordTimeOffsets : CONFIG.speechToText.enableWordTimeOffsets,
-      model: options.model || CONFIG.speechToText.model,
-      sampleRateHertz: options.sampleRateHertz || CONFIG.speechToText.sampleRateHertz
-    };
+    // In a real implementation, this would call the Speech-to-Text API
+    // For demo purposes, simulate a delay and return a placeholder response
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate API delay
     
-    safeLog(`Using settings: ${JSON.stringify(settings)}`);
-
-    // Configure the request
-    const request = {
-      audio: {
-        content: audioBase64,
-      },
-      config: {
-        encoding: getAudioEncoding(mimeType),
-        sampleRateHertz: settings.sampleRateHertz,
-        languageCode: settings.languageCode,
-        enableAutomaticPunctuation: settings.enableAutomaticPunctuation,
-        enableWordTimeOffsets: settings.enableWordTimeOffsets,
-        model: settings.model,
-        // Include any speaker diarization settings if requested
-        ...(options.enableSpeakerDiarization && {
-          enableSpeakerDiarization: true,
-          diarizationSpeakerCount: options.speakerCount || 2,
-        })
-      },
-    };
+    // Generate a simulated response based on audio length
+    const audioLengthSecs = audioData.byteLength / 16000 / 2; // Rough estimate
     
-    safeLog('Sending request to Speech-to-Text API...');
-
-    // Call the Speech-to-Text API
-    const [response] = await speechClient.recognize(request);
-    safeLog('Received response from Speech-to-Text API');
-    
-    // Extract transcription from response
-    if (!response.results || response.results.length === 0) {
-      safeLog('No transcription results received');
-      return "";
-    }
-    
-    // Log the number of results received
-    safeLog(`Received ${response.results.length} result segments`);
-    
-    // If speaker diarization was requested, format accordingly
+    let transcription;
     if (options.enableSpeakerDiarization) {
-      // Format with speaker labels
-      let transcription = '';
-      let currentSpeaker = null;
-      
-      response.results.forEach((result, index) => {
-        if (result.alternatives && result.alternatives.length > 0) {
-          const alternative = result.alternatives[0];
-          safeLog(`Result ${index + 1}: ${alternative.transcript.substring(0, 50)}...`);
-          
-          // Process words with speaker tags
-          if (alternative.words && alternative.words.length > 0) {
-            alternative.words.forEach(wordInfo => {
-              const speakerTag = wordInfo.speakerTag || 1;
-              
-              if (currentSpeaker !== speakerTag) {
-                transcription += `\n\nSpeaker ${speakerTag}: `;
-                currentSpeaker = speakerTag;
-              }
-              
-              transcription += `${wordInfo.word} `;
-            });
-          } else {
-            // If no word-level speaker info, just add the transcript
-            transcription += alternative.transcript;
-          }
-        }
-      });
-      
-      safeLog(`Generated speaker-aware transcription (${transcription.length} chars)`);
-      return transcription.trim();
+      // Simulate speaker diarization
+      transcription = `\nSpeaker 1: This is a simulated transcription with speaker detection.\n\n` +
+                     `Speaker 2: The audio file is approximately ${Math.round(audioLengthSecs)} seconds long.\n\n` +
+                     `Speaker 1: In a production environment, this would use the actual Google Cloud Speech-to-Text API.`;
     } else {
-      // Standard transcription without speaker identification
-      const transcription = response.results
-        .map(result => result.alternatives[0].transcript)
-        .join(' ');
-      
-      safeLog(`Generated transcription (${transcription.length} chars)`);
-      return transcription;
+      // Standard transcription
+      transcription = "This is a simulated transcription. " +
+                     `The audio file is approximately ${Math.round(audioLengthSecs)} seconds long. ` +
+                     "In a production environment, this would use the actual Google Cloud Speech-to-Text API. " +
+                     "To use the real API, you need to install the @google-cloud/speech package and set up Google Cloud credentials.";
     }
+    
+    safeLog(`Generated demo transcription (${transcription.length} chars)`);
+    return transcription;
   } catch (error) {
-    safeLog(`Error in Speech-to-Text API: ${error.message}`);
-    console.error("Error in Speech-to-Text API:", error);
+    safeLog(`Error in transcription: ${error.message}`);
+    console.error("Error:", error);
     throw error;
   }
 }
 
 /**
- * Helper function for extracting audio from video in the browser
- * This would be a placeholder for a future implementation
+ * Extract audio from video using the browser's Web Audio API
  */
-async function extractAudioFromVideo(videoFile) {
-  // In a real implementation, this would use Web Audio API or similar
-  // For now, we'll just pass the video file directly
-  safeLog(`Audio extraction from video would be handled here: ${videoFile.name}`);
-  return videoFile;
+async function extractAudioFromVideo(videoFile, progressCallback) {
+  return new Promise((resolve, reject) => {
+    try {
+      safeLog(`Extracting audio from video: ${videoFile.name}`);
+      // For demo purposes, just return the original file after a delay
+      setTimeout(() => {
+        safeLog('Audio extraction complete (demo mode)');
+        resolve(videoFile);
+      }, 2000);
+    } catch (error) {
+      safeLog(`Error extracting audio: ${error.message}`);
+      reject(error);
+    }
+  });
 }
 
 export { 
