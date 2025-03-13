@@ -1,42 +1,41 @@
-# Audio Transcription App with Video Support
+# Original Working Video Transcription
 
-This branch adds improved video file handling with audio extraction for reliable transcription of large video files.
+This branch contains the original implementation from commit [79cc2c4](https://github.com/karstegg/audio-transcription/commit/79cc2c4a9f177d7af299595af74a1bba2fb0dd7f) ("Fix transcription quality and chunk reliability") that correctly handled video transcription without requiring audio extraction.
 
 ## Key Features
 
-- Automatic audio extraction from video files using Web Audio API
-- Optimized extraction with high-speed playback (16x) for faster processing
-- Progress tracking during extraction
-- Fallback to direct video processing if extraction fails
-- Improved chunking with context-aware prompts for better chunk transitions
-- Support for multiple video formats (MP4, MPEG, MOV, AVI, MKV)
+- **Direct Video Processing**: Processes video files without extracting audio
+- **MIME Type Preservation**: Properly preserves MIME types across file chunks using `Object.defineProperty()`
+- **Optimized Chunk Size**: Uses a 15MB effective chunk size to account for base64 encoding overhead
+- **Verbatim Transcription**: Configures the Gemini API to focus on exact speech transcription
 
 ## How It Works
 
-1. When a video file is detected, audio is extracted using Web Audio API and MediaRecorder
-2. The extraction happens at 16x speed to reduce processing time
-3. The extracted audio is sent to Gemini API in chunks for transcription
-4. Special prompts ensure continuation between chunks for seamless transcriptions
+The implementation handles video files directly by:
 
-## Technical Implementation
+1. Preserving the original video file MIME type in each chunk:
+   ```javascript
+   Object.defineProperty(chunk, 'type', {
+     value: file.type,
+     writable: false
+   });
+   ```
 
-- Uses the browser's Web Audio API to connect a video element to a MediaRecorder
-- Optimized memory usage by streaming directly without intermediate processing
-- Real-time progress tracking during extraction
-- Improved chunk handling with context-aware prompts for each chunk
+2. Using a smaller chunk size to account for base64 encoding:
+   ```javascript
+   const effectiveChunkSize = 15 * 1024 * 1024; // 15MB instead of 22MB
+   ```
 
-## Why Audio Extraction?
+3. Sending the video data directly to the Gemini API with the correct MIME type:
+   ```javascript
+   const mimeType = getAudioMimeType(file);
+   // ...
+   inline_data: { 
+     mime_type: mimeType, 
+     data: base64Data 
+   }
+   ```
 
-The Gemini API has issues processing multi-part video files due to container format requirements. The API works fine with the first chunk but fails on subsequent chunks with "invalid argument" errors. By extracting just the audio:
+This version successfully processes MP3 and video files without requiring audio extraction, making it faster and more efficient for single-chunk videos.
 
-1. We eliminate video container format issues
-2. We reduce file sizes significantly (audio is much smaller than video)
-3. We ensure better transcription quality as Gemini focuses just on speech
-
-## Performance Considerations
-
-Audio extraction adds processing time but ensures much better reliability for large video files. For optimal performance:
-
-- The extraction uses the maximum playback rate browsers support (16x)
-- Progress indicators keep the user informed during extraction
-- Memory usage is optimized by streaming directly to MediaRecorder
+Note: Multi-chunk videos may encounter errors with the Gemini API due to video container format requirements.
