@@ -73,82 +73,6 @@ function handleFileSelection(event) {
   }
 }
 
-// Extract audio from video file efficiently
-async function extractAudioFromVideo(videoFile, statusCallback) {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video');
-    video.src = URL.createObjectURL(videoFile);
-    video.muted = true;
-    
-    // Set up audio processing
-    const audioContext = new AudioContext();
-    const source = audioContext.createMediaElementSource(video);
-    const destination = audioContext.createMediaStreamDestination();
-    source.connect(destination);
-    
-    // Set very high playback rate to speed up extraction
-    // Maximum value that works reliably across browsers
-    video.playbackRate = 16;
-    
-    // Record the audio stream
-    const recorder = new MediaRecorder(destination.stream);
-    const audioChunks = [];
-    
-    // Track progress
-    let lastUpdateTime = 0;
-    const updateInterval = 500; // Update status every 500ms
-    
-    video.addEventListener('timeupdate', () => {
-      const now = Date.now();
-      if (now - lastUpdateTime > updateInterval) {
-        const progress = Math.round((video.currentTime / video.duration) * 100);
-        if (statusCallback && !isNaN(progress)) {
-          statusCallback(`Extracting audio: ${progress}% complete`);
-        }
-        lastUpdateTime = now;
-      }
-    });
-    
-    recorder.ondataavailable = e => audioChunks.push(e.data);
-    
-    recorder.onstop = () => {
-      URL.revokeObjectURL(video.src);
-      video.remove();
-      
-      // Create audio blob with optimized metadata
-      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-      
-      // Add a name property to the blob for better handling
-      Object.defineProperty(audioBlob, 'name', {
-        value: videoFile.name.replace(/\.[^/.]+$/, '') + '.wav',
-        writable: false
-      });
-      
-      resolve(audioBlob);
-    };
-    
-    // Start recording when video can play
-    video.oncanplay = () => {
-      recorder.start();
-      video.play();
-    };
-    
-    // Stop when video ends
-    video.onended = () => {
-      recorder.stop();
-    };
-    
-    // Handle errors
-    video.onerror = (e) => {
-      reject(new Error(`Video error: ${e.target.error.message}`));
-    };
-    
-    recorder.onerror = (e) => {
-      reject(new Error(`Recording error: ${e}`));
-    };
-  });
-}
-
 // Get appropriate MIME type for audio/video files
 function getAudioMimeType(file) {
   // If the file already has a valid MIME type, use it
@@ -172,8 +96,7 @@ function getAudioMimeType(file) {
     'mp4': 'video/mp4',
     'mov': 'video/quicktime',
     'avi': 'video/x-msvideo',
-    'mkv': 'video/x-matroska',
-    'mpeg': 'video/mpeg'
+    'mkv': 'video/x-matroska'
   };
   
   return mimeTypes[extension] || 'audio/mpeg'; // Default to audio/mpeg if unknown
@@ -248,26 +171,8 @@ async function handleTranscriptionRequest() {
       }
     });
     
-    // Check if it's a video file
-    if (file.type.startsWith('video/')) {
-      logToDebug('Video file detected, extracting audio for better chunk processing');
-      try {
-        const audioFile = await extractAudioFromVideo(file, showStatus);
-        logToDebug(`Audio extracted from video: ${formatFileSize(audioFile.size)}`);
-        
-        // Process the extracted audio
-        await processLargeFile(audioFile, model);
-      } catch (extractError) {
-        logToDebug(`Audio extraction failed: ${extractError.message}`);
-        logToDebug('Falling back to direct video processing');
-        
-        // Fall back to direct processing
-        await processLargeFile(file, model);
-      }
-    } else {
-      // Regular audio file processing
-      await processLargeFile(file, model);
-    }
+    // All files should be chunked for consistency
+    await processLargeFile(file, model);
     
     // Hide status indicator when done
     hideStatus();
@@ -276,7 +181,6 @@ async function handleTranscriptionRequest() {
     console.error("Transcription error:", error);
     showError(`Error: ${error.message}`);
     logToDebug(`ERROR: ${error.message}`);
-    hideStatus();
   }
 }
 
@@ -290,7 +194,7 @@ async function processLargeFile(file, model) {
     logToDebug(`Processing chunk ${i + 1} of ${chunks.length}`);
     
     try {
-      const chunkTranscription = await transcribeAudio(chunks[i], model, i + 1, chunks.length);
+      const chunkTranscription = await transcribeAudio(chunks[i], model);
       fullTranscription += chunkTranscription + ' ';
       
       // Update with partial results
@@ -313,7 +217,7 @@ async function processLargeFile(file, model) {
 }
 
 // Core transcription function
-async function transcribeAudio(file, model, chunkIndex, totalChunks) {
+async function transcribeAudio(file, model) {
   try {
     // Read file as ArrayBuffer
     const arrayBuffer = await readFileAsArrayBuffer(file);
@@ -326,20 +230,12 @@ async function transcribeAudio(file, model, chunkIndex, totalChunks) {
     const mimeType = getAudioMimeType(file);
     logToDebug(`Using MIME type: ${mimeType}`);
     
-    // Prepare prompt based on chunk position
-    let promptText = "Please provide a verbatim transcription of this audio. Include all spoken words exactly as heard, with no summarization, commentary, or analysis. Just transcribe the exact speech.";
-    
-    // For non-first chunks, add context that this is a continuation
-    if (chunkIndex && chunkIndex > 1) {
-      promptText = `This is part ${chunkIndex} of ${totalChunks} of the same audio. Please continue the verbatim transcription from where the previous part left off. Include all spoken words exactly as heard.`;
-    }
-    
-    // Prepare content for Gemini API 
+    // Prepare content for Gemini API with specific instruction for verbatim transcription
     const contents = [
       {
         role: 'user',
         parts: [
-          { text: promptText }, 
+          { text: "Please provide a verbatim transcription of this audio. Include all spoken words exactly as heard, with no summarization, commentary, or analysis. Just transcribe the exact speech." }, 
           { 
             inline_data: { 
               mime_type: mimeType, 
