@@ -1,11 +1,11 @@
 # Audio Transcription App with Dual API Support
 
-This application transcribes audio and video files using either Google Cloud Speech-to-Text API or Google's Gemini API, with a focus on accurate transcription and seamless user experience.
+This application transcribes audio and video files using either Google Cloud Speech-to-Text API (simulated for demo) or Google's Gemini API, with a focus on accurate transcription and seamless user experience.
 
 ## Features
 
 - **Dual API Support**:
-  - Google Cloud Speech-to-Text API (optimized for transcription)
+  - Google Cloud Speech-to-Text API (simulated for demo purposes)
   - Google Gemini API (for backward compatibility)
 
 - **Advanced Audio Processing**:
@@ -23,6 +23,20 @@ This application transcribes audio and video files using either Google Cloud Spe
   - Real-time progress tracking
   - Debug console for troubleshooting
   - Media preview for both audio and video
+
+## Demo Implementation Note
+
+This demo version simulates the Speech-to-Text API for development and testing purposes. The actual implementation would require:
+
+1. Installing the Google Cloud Speech-to-Text client library:
+   ```
+   npm install @google-cloud/speech
+   ```
+
+2. Setting up authentication:
+   ```
+   export GOOGLE_APPLICATION_CREDENTIALS="/path/to/your/service-account-key.json"
+   ```
 
 ## How It Works
 
@@ -54,7 +68,7 @@ This application transcribes audio and video files using either Google Cloud Spe
 ### Prerequisites
 
 - Node.js and npm
-- Google Cloud account for Speech-to-Text API
+- Google Cloud account for Speech-to-Text API (for production)
 - Google AI Studio account for Gemini API
 
 ### Installation
@@ -71,8 +85,8 @@ This application transcribes audio and video files using either Google Cloud Spe
    ```
 
 3. Set up API credentials
-   - For Speech-to-Text: Set up Google Cloud credentials
    - For Gemini: Update the API key in config.js
+   - For Speech-to-Text (production): Set up Google Cloud credentials
 
 4. Run the development server
    ```
@@ -102,29 +116,6 @@ source.connect(audioStream);
 
 // Speed up processing
 videoElement.playbackRate = 16; // 16x speed
-```
-
-### Speech-to-Text Integration
-
-The application uses the official Google Cloud Speech-to-Text client library:
-
-```javascript
-// Configure the request
-const request = {
-  audio: {
-    content: audioBase64,
-  },
-  config: {
-    encoding: getAudioEncoding(mimeType),
-    languageCode: settings.languageCode,
-    enableAutomaticPunctuation: settings.enableAutomaticPunctuation,
-    enableSpeakerDiarization: options.enableSpeakerDiarization,
-    // other options...
-  },
-};
-
-// Call the Speech-to-Text API
-const [response] = await speechClient.recognize(request);
 ```
 
 ## License
