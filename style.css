@@ -39,11 +39,17 @@ h1::before {
   background-size: cover;
 }
 
+h3 {
+  margin-bottom: 12px;
+  color: #444;
+}
+
+/* Upload container */
 .upload-container {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 input[type="file"] {
@@ -74,6 +80,53 @@ button:active {
   transform: scale(0.98);
 }
 
+/* API Selector */
+.api-selector {
+  margin-bottom: 20px;
+}
+
+.api-selector select {
+  margin-left: 8px;
+  padding: 8px 12px;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+}
+
+/* Options Panel */
+.options-panel {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.option-row {
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.option-row label {
+  min-width: 120px;
+}
+
+.option-row select {
+  padding: 8px;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  min-width: 150px;
+}
+
+.option-row.checkbox {
+  display: flex;
+  align-items: center;
+}
+
+.option-row.checkbox input {
+  margin-right: 8px;
+}
+
+/* Result container */
 #result-container {
   margin-top: 24px;
 }
@@ -83,11 +136,13 @@ button:active {
   padding: 16px;
   border: 1px solid #dadce0;
   border-radius: 8px;
-  min-height: 100px;
+  min-height: 200px;
+  max-height: 400px;
   white-space: pre-wrap;
   font-size: 15px;
   line-height: 1.5;
   background-color: #f8f9fa;
+  overflow-y: auto;
 }
 
 /* Status indicator */
@@ -120,14 +175,16 @@ button:active {
   }
 }
 
-/* Audio player */
-#audio-player-container {
+/* Media preview */
+#mediaPreviewContainer {
   margin-bottom: 24px;
 }
 
-audio {
+audio, video {
   width: 100%;
   margin-top: 8px;
+  border-radius: 8px;
+  background-color: #f1f3f4;
 }
 
 /* Debug console */
@@ -136,6 +193,10 @@ footer {
 }
 
 .debug-toggle {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
   background-color: #f1f3f4;
   color: #5f6368;
   font-size: 13px;
@@ -147,6 +208,12 @@ footer {
 }
 
 .debug-console {
+  position: fixed;
+  bottom: 60px;
+  right: 20px;
+  width: 600px;
+  max-height: 400px;
+  z-index: 999;
   margin-top: 12px;
   padding: 16px;
   background-color: #202124;
@@ -155,7 +222,20 @@ footer {
   font-family: monospace;
   font-size: 14px;
   line-height: 1.6;
-  max-height: 300px;
   overflow-y: auto;
   white-space: pre-wrap;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .upload-container {
+    flex-direction: column;
+  }
+  
+  .debug-console {
+    width: calc(100% - 40px);
+    right: 20px;
+    left: 20px;
+  }
 }
