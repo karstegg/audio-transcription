@@ -11,53 +11,75 @@
 <body>
   <main>
     <h1>Audio Transcription App</h1>
-    <div class="upload-container">
+    <p>Upload an audio or video file to transcribe it using Google Speech-to-Text API.</p>
+    
+    <div class="file-upload-container">
       <input type="file" id="audioFileInput" accept="audio/*,video/*">
-      <div class="button-group">
-        <button id="transcribeButton" class="primary-button">Transcribe</button>
-        <button id="cancelButton" class="secondary-button">Cancel/Reset</button>
+      <button id="transcribeButton" class="button-primary">Transcribe</button>
+    </div>
+    
+    <div class="api-selector">
+      <label for="apiSelect">Transcription API:</label>
+      <select id="apiSelect">
+        <option value="speechToText" selected>Google Speech-to-Text</option>
+        <option value="gemini">Gemini AI</option>
+      </select>
+    </div>
+    
+    <div id="transcription-container">
+      <div class="player-container">
+        <h2>Media Preview</h2>
+        <div id="mediaPreviewContainer">
+          <!-- For video files -->
+          <video id="videoPlayer" controls style="display: none; width: 100%;"></video>
+          <!-- For audio files -->
+          <audio id="audioPlayer" controls style="display: none; width: 100%;"></audio>
+        </div>
+      </div>
+      
+      <div class="output-container">
+        <h2>Transcription</h2>
+        <div id="transcriptionOutput" class="transcription-box">
+          Upload an audio or video file and click "Transcribe" to see the result.
+        </div>
       </div>
     </div>
     
-    <div id="status-indicator" class="status hidden">
-      <div class="spinner"></div>
-      <span id="status-text">Processing...</span>
-    </div>
-    
-    <div id="result-container">
-      <div id="audio-player-container" class="hidden">
-        <h3>Original Audio</h3>
-        <audio id="audioPlayer" controls></audio>
+    <div class="options-container">
+      <h3>Speech Recognition Options</h3>
+      <div class="option">
+        <label for="languageSelect">Language:</label>
+        <select id="languageSelect">
+          <option value="en-US">English (US)</option>
+          <option value="en-GB">English (UK)</option>
+          <option value="es-ES">Spanish</option>
+          <option value="fr-FR">French</option>
+          <option value="de-DE">German</option>
+          <option value="ja-JP">Japanese</option>
+          <option value="zh-CN">Chinese (Simplified)</option>
+        </select>
       </div>
       
-      <div id="transcription-container">
-        <div class="section-header">
-          <h3>Transcription</h3>
-          <button id="copyTranscriptButton" class="icon-button">
-            <span class="icon">📋</span> Copy
-          </button>
-        </div>
-        <div id="transcriptionOutput" class="output-box"></div>
+      <div class="option">
+        <label for="modelSelect">Model:</label>
+        <select id="modelSelect">
+          <option value="default">Default</option>
+          <option value="phone_call">Phone Call</option>
+          <option value="video">Video</option>
+          <option value="latest_short">Latest Short</option>
+        </select>
       </div>
       
-      <div id="summary-container" class="hidden">
-        <div class="section-header">
-          <h3>Meeting Summary</h3>
-          <button id="copySummaryButton" class="icon-button">
-            <span class="icon">📋</span> Copy
-          </button>
-        </div>
-        <div id="summaryOutput" class="output-box"></div>
-        <button id="createSummaryButton" class="feature-button">Create Summary</button>
+      <div class="option checkbox">
+        <input type="checkbox" id="enablePunctuation" checked>
+        <label for="enablePunctuation">Enable automatic punctuation</label>
       </div>
     </div>
   </main>
 
-  <footer>
-    <button id="toggleDebugButton" class="debug-toggle">Toggle Debug Console</button>
-    <div id="debugWindow" class="debug-console" style="display: none;"></div>
-  </footer>
-
-  <script type="module" src="/main.js"></script>
+  <button id="toggleDebugButton" class="debug-toggle">Toggle Debug Console</button>
+  <div id="debugWindow" class="debug-window" style="display: none;"></div>
+  
+  <script type="module" src="main.js"></script>
 </body>
 </html>
