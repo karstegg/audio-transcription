@@ -2,33 +2,71 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import Base64 from 'base64-js';
 import { maybeShowApiKeyBanner } from './gemini-api-banner';
 import CONFIG from './config.js';
+import { transcribeAudioWithSpeechToText } from './speechClient.js';
+import { 
+  extractAudioFromVideo, 
+  chunkFile, 
+  readFileAsArrayBuffer, 
+  getFileMimeType, 
+  formatFileSize 
+} from './audioProcessor.js';
 
 // Get configuration values
 const MAX_CHUNK_SIZE = CONFIG.fileProcessing.maxChunkSize;
+const USE_GEMINI = CONFIG.fileProcessing.useGeminiAPI;
+const USE_SPEECH_TO_TEXT = CONFIG.fileProcessing.useSpeechToTextAPI;
+
+// Gemini API configuration (kept for backward compatibility)
 const GEMINI_MODEL = CONFIG.gemini.model;
 const API_KEY = CONFIG.gemini.apiKey;
 
 // DOM Elements
-const audioFileInput = document.getElementById('audioFileInput');
-const transcribeButton = document.getElementById('transcribeButton');
-const transcriptionOutput = document.getElementById('transcriptionOutput');
-const audioPlayer = document.getElementById('audioPlayer');
-const audioPlayerContainer = document.getElementById('audio-player-container');
-const statusIndicator = document.getElementById('status-indicator');
-const statusText = document.getElementById('status-text');
-const toggleDebugButton = document.getElementById('toggleDebugButton');
-const debugWindow = document.getElementById('debugWindow');
+let audioFileInput;
+let transcribeButton;
+let transcriptionOutput;
+let audioPlayer;
+let videoPlayer;
+let audioPlayerContainer;
+let statusIndicator;
+let statusText;
+let toggleDebugButton;
+let debugWindow;
+let apiSelect;
+let languageSelect;
+let modelSelect;
+let enablePunctuation;
+let enableSpeakerDiarization;
 
 // Debug utility
 function logToDebug(message) {
+  if (!debugWindow) return;
+  
   const timestamp = new Date().toLocaleTimeString();
   debugWindow.innerHTML += `[${timestamp}] ${message}<br>`;
   // Auto-scroll to bottom
   debugWindow.scrollTop = debugWindow.scrollHeight;
+  console.log(`[DEBUG] ${message}`);
 }
 
 // Initialize the app
 function initApp() {
+  // Get DOM elements
+  audioFileInput = document.getElementById('audioFileInput');
+  transcribeButton = document.getElementById('transcribeButton');
+  transcriptionOutput = document.getElementById('transcriptionOutput');
+  audioPlayer = document.getElementById('audioPlayer');
+  videoPlayer = document.getElementById('videoPlayer');
+  audioPlayerContainer = document.getElementById('mediaPreviewContainer');
+  statusIndicator = document.getElementById('status-indicator');
+  statusText = document.getElementById('status-text');
+  toggleDebugButton = document.getElementById('toggleDebugButton');
+  debugWindow = document.getElementById('debugWindow');
+  apiSelect = document.getElementById('apiSelect');
+  languageSelect = document.getElementById('languageSelect');
+  modelSelect = document.getElementById('modelSelect');
+  enablePunctuation = document.getElementById('enablePunctuation');
+  enableSpeakerDiarization = document.getElementById('enableSpeakerDiarization');
+  
   logToDebug('App initialized');
   
   // Check for API key and show banner if needed
@@ -38,6 +76,11 @@ function initApp() {
   toggleDebugButton.addEventListener('click', toggleDebugConsole);
   transcribeButton.addEventListener('click', handleTranscriptionRequest);
   audioFileInput.addEventListener('change', handleFileSelection);
+  
+  // Set initial API selection from config
+  if (apiSelect) {
+    apiSelect.value = USE_SPEECH_TO_TEXT ? 'speechToText' : 'gemini';
+  }
 }
 
 // Toggle debug console visibility
@@ -52,54 +95,42 @@ function toggleDebugConsole() {
 // Handle file selection
 function handleFileSelection(event) {
   const file = event.target.files[0];
-  if (file) {
-    // Set the source for the audio player
+  if (!file) return;
+  
+  // Determine if this is a video or audio file
+  const isVideo = file.type.startsWith('video/');
+  
+  // Show the appropriate player
+  if (isVideo && videoPlayer) {
+    videoPlayer.style.display = 'block';
+    audioPlayer.style.display = 'none';
+    videoPlayer.src = URL.createObjectURL(file);
+  } else if (audioPlayer) {
+    videoPlayer.style.display = 'none';
+    audioPlayer.style.display = 'block';
     audioPlayer.src = URL.createObjectURL(file);
+  }
+  
+  // Show the media container
+  if (audioPlayerContainer) {
     audioPlayerContainer.classList.remove('hidden');
-    
-    // Reset transcription output
+  }
+  
+  // Reset transcription output
+  if (transcriptionOutput) {
     transcriptionOutput.textContent = '';
-    
-    // Estimate base64 size and log information
-    const estimatedBase64Size = estimateBase64Size(file.size);
-    logToDebug(`File selected: ${file.name} (${formatFileSize(file.size)})`);
-    logToDebug(`File type: ${file.type}`);
-    logToDebug(`Estimated base64 size: ${formatFileSize(estimatedBase64Size)}`);
-    
-    // Automatically determine if chunking will be needed
-    if (estimatedBase64Size > 30 * 1024 * 1024) {
-      logToDebug(`File will require chunking (base64 size exceeds 30MB)`);
-    }
-  }
-}
-
-// Get appropriate MIME type for audio/video files
-function getAudioMimeType(file) {
-  // If the file already has a valid MIME type, use it
-  if (file.type && (file.type.startsWith('audio/') || file.type.startsWith('video/'))) {
-    return file.type;
   }
   
-  // Otherwise, try to determine from file extension
-  const extension = file.name.split('.').pop().toLowerCase();
+  // Estimate base64 size and log information
+  const estimatedBase64Size = estimateBase64Size(file.size);
+  logToDebug(`File selected: ${file.name} (${formatFileSize(file.size)})`);
+  logToDebug(`File type: ${file.type}`);
+  logToDebug(`Estimated base64 size: ${formatFileSize(estimatedBase64Size)}`);
   
-  const mimeTypes = {
-    // Audio formats
-    'mp3': 'audio/mpeg',
-    'wav': 'audio/wav',
-    'ogg': 'audio/ogg',
-    'webm': 'audio/webm',
-    'm4a': 'audio/mp4',
-    'aac': 'audio/aac',
-    'flac': 'audio/flac',
-    // Video formats
-    'mp4': 'video/mp4',
-    'mov': 'video/quicktime',
-    'avi': 'video/x-msvideo',
-    'mkv': 'video/x-matroska'
-  };
-  
-  return mimeTypes[extension] || 'audio/mpeg'; // Default to audio/mpeg if unknown
+  // Automatically determine if chunking will be needed
+  if (estimatedBase64Size > 30 * 1024 * 1024) {
+    logToDebug(`File will require chunking (base64 size exceeds 30MB)`);
+  }
 }
 
 // Estimate base64 encoded size of a file (bytes)
@@ -109,47 +140,12 @@ function estimateBase64Size(originalSize) {
   return Math.ceil(originalSize * 1.37);
 }
 
-// Format file size for display
-function formatFileSize(bytes) {
-  if (bytes < 1024) return bytes + ' bytes';
-  else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-  else return (bytes / 1048576).toFixed(1) + ' MB';
-}
-
-// Split large files into manageable chunks
-function chunkFile(file) {
-  // Make smaller chunks to avoid errors - 15MB instead of 22MB
-  const effectiveChunkSize = 15 * 1024 * 1024;
-  const chunks = [];
-  let start = 0;
-  const fileSize = file.size;
-
-  while (start < fileSize) {
-    const end = Math.min(start + effectiveChunkSize, fileSize);
-    const chunk = file.slice(start, end);
-    // Preserve the original file type and name for each chunk
-    Object.defineProperty(chunk, 'type', {
-      value: file.type,
-      writable: false
-    });
-    Object.defineProperty(chunk, 'name', {
-      value: file.name,
-      writable: false
-    });
-    chunks.push(chunk);
-    start = end;
-  }
-  
-  logToDebug(`File split into ${chunks.length} chunks of max ${formatFileSize(effectiveChunkSize)}`);
-  return chunks;
-}
-
 // Handle transcription request
 async function handleTranscriptionRequest() {
   const file = audioFileInput.files[0];
   
   if (!file) {
-    showError('Please select an audio file.');
+    showError('Please select an audio or video file.');
     return;
   }
   
@@ -160,19 +156,46 @@ async function handleTranscriptionRequest() {
     
     logToDebug('Starting transcription process');
     
-    // Initialize Gemini API
-    const genAI = new GoogleGenerativeAI(API_KEY);
-    const model = genAI.getGenerativeModel({ 
-      model: GEMINI_MODEL,
-      generationConfig: {
-        temperature: 0,
-        topP: 0.95,
-        topK: 64,
+    // Determine which API to use based on UI or config
+    const useGemini = apiSelect ? 
+      apiSelect.value === 'gemini' : 
+      USE_GEMINI;
+    
+    const useSpeechToText = apiSelect ? 
+      apiSelect.value === 'speechToText' : 
+      USE_SPEECH_TO_TEXT;
+    
+    // Log which API we're using
+    logToDebug(`Using API: ${useGemini ? 'Gemini' : 'Speech-to-Text'}`);
+    
+    // Check if it's a video file and extract audio if needed
+    const isVideo = file.type.startsWith('video/');
+    let audioFile = file;
+    
+    if (isVideo) {
+      logToDebug('Processing video file - extracting audio');
+      showStatus('Extracting audio from video...');
+      
+      try {
+        audioFile = await extractAudioFromVideo(file, (progress) => {
+          showStatus(`Extracting audio: ${Math.round(progress)}%`);
+        });
+        logToDebug('Audio extraction complete');
+      } catch (error) {
+        logToDebug(`Audio extraction failed: ${error.message}`);
+        // Continue with the original file if extraction fails
+        audioFile = file;
       }
-    });
+    }
     
     // All files should be chunked for consistency
-    await processLargeFile(file, model);
+    if (useGemini) {
+      // Use Gemini API
+      await processWithGemini(audioFile);
+    } else {
+      // Use Speech-to-Text API
+      await processWithSpeechToText(audioFile);
+    }
     
     // Hide status indicator when done
     hideStatus();
@@ -181,12 +204,25 @@ async function handleTranscriptionRequest() {
     console.error("Transcription error:", error);
     showError(`Error: ${error.message}`);
     logToDebug(`ERROR: ${error.message}`);
+    hideStatus();
   }
 }
 
-// Process a large file in chunks
-async function processLargeFile(file, model) {
-  const chunks = chunkFile(file);
+// Process with Gemini API
+async function processWithGemini(file) {
+  // Initialize Gemini API
+  const genAI = new GoogleGenerativeAI(API_KEY);
+  const model = genAI.getGenerativeModel({ 
+    model: GEMINI_MODEL,
+    generationConfig: {
+      temperature: 0,
+      topP: 0.95,
+      topK: 64,
+    }
+  });
+  
+  // Process file in chunks
+  const chunks = chunkFile(file, MAX_CHUNK_SIZE);
   let fullTranscription = '';
   
   for (let i = 0; i < chunks.length; i++) {
@@ -194,7 +230,7 @@ async function processLargeFile(file, model) {
     logToDebug(`Processing chunk ${i + 1} of ${chunks.length}`);
     
     try {
-      const chunkTranscription = await transcribeAudio(chunks[i], model);
+      const chunkTranscription = await transcribeAudioWithGemini(chunks[i], model);
       fullTranscription += chunkTranscription + ' ';
       
       // Update with partial results
@@ -213,11 +249,62 @@ async function processLargeFile(file, model) {
   
   // Final display with complete transcription
   displayResult(fullTranscription);
-  logToDebug('All chunks processed');
+  logToDebug('All chunks processed with Gemini API');
 }
 
-// Core transcription function
-async function transcribeAudio(file, model) {
+// Process with Speech-to-Text API
+async function processWithSpeechToText(file) {
+  // Get transcription options from UI
+  const options = {
+    languageCode: languageSelect ? languageSelect.value : CONFIG.speechToText.languageCode,
+    model: modelSelect ? modelSelect.value : CONFIG.speechToText.model,
+    enableAutomaticPunctuation: enablePunctuation ? enablePunctuation.checked : CONFIG.speechToText.enableAutomaticPunctuation,
+    enableSpeakerDiarization: enableSpeakerDiarization ? enableSpeakerDiarization.checked : false,
+    speakerCount: 2 // Default to 2 speakers if diarization is enabled
+  };
+  
+  logToDebug(`Speech-to-Text options: ${JSON.stringify(options)}`);
+  
+  // Process file in chunks
+  const chunks = chunkFile(file, MAX_CHUNK_SIZE);
+  let fullTranscription = '';
+  
+  for (let i = 0; i < chunks.length; i++) {
+    showStatus(`Processing chunk ${i + 1} of ${chunks.length}...`);
+    logToDebug(`Processing chunk ${i + 1} of ${chunks.length}`);
+    
+    try {
+      // Read file as ArrayBuffer
+      const arrayBuffer = await readFileAsArrayBuffer(chunks[i]);
+      
+      // Get appropriate MIME type
+      const mimeType = getFileMimeType(chunks[i]);
+      
+      // Transcribe with Speech-to-Text API
+      const chunkTranscription = await transcribeAudioWithSpeechToText(arrayBuffer, mimeType, options);
+      fullTranscription += chunkTranscription + ' ';
+      
+      // Update with partial results
+      transcriptionOutput.textContent = fullTranscription;
+      
+      // Add a small delay between chunks to avoid rate limiting
+      if (i < chunks.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    } catch (error) {
+      logToDebug(`Error with chunk ${i + 1}: ${error.message}`);
+      // Continue with next chunk instead of failing completely
+      fullTranscription += ` [Error transcribing part ${i + 1}] `;
+    }
+  }
+  
+  // Final display with complete transcription
+  displayResult(fullTranscription);
+  logToDebug('All chunks processed with Speech-to-Text API');
+}
+
+// Core Gemini transcription function
+async function transcribeAudioWithGemini(file, model) {
   try {
     // Read file as ArrayBuffer
     const arrayBuffer = await readFileAsArrayBuffer(file);
@@ -227,7 +314,7 @@ async function transcribeAudio(file, model) {
     logToDebug(`Chunk actual base64 size: ${formatFileSize(base64Data.length)}`);
     
     // Get appropriate MIME type
-    const mimeType = getAudioMimeType(file);
+    const mimeType = getFileMimeType(file);
     logToDebug(`Using MIME type: ${mimeType}`);
     
     // Prepare content for Gemini API with specific instruction for verbatim transcription
@@ -256,19 +343,9 @@ async function transcribeAudio(file, model) {
     
     return response.text();
   } catch (error) {
-    logToDebug(`Transcription error: ${error.message}`);
+    logToDebug(`Gemini transcription error: ${error.message}`);
     throw error;
   }
-}
-
-// Helper function to read file as ArrayBuffer
-function readFileAsArrayBuffer(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = event => resolve(event.target.result);
-    reader.onerror = error => reject(error);
-    reader.readAsArrayBuffer(file);
-  });
 }
 
 // Display transcription result
